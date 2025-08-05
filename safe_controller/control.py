@@ -1,11 +1,15 @@
-import safe_controller.cbf as cbf
+import safe_controller.safety as safety
+import numpy as np
 
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
+from scipy.spatial.transform import Rotation as R
 
 TOPIC_NOM_CTRL = "/nominal_control"
 TOPIC_SAFE_CTRL = "/cmd_vel"
+TOPIC_ODOM = "/odom"
 
 MAX_LINEAR = 0.2
 MAX_ANGULAR = 2.0
@@ -16,10 +20,15 @@ class Control(Node):
 
         qos_profile_depth = 10 # This is the message queue size
         
-        self.subscriber_ = self.create_subscription(Twist,
+        self.nominal_vel_subscriber_ = self.create_subscription(Twist,
                                                     TOPIC_NOM_CTRL,
-                                                    self.subscriber_callback,
+                                                    self.nominal_vel_subscriber_callback,
                                                     qos_profile_depth)
+        
+        self.odom_subscriber_ = self.create_subscription(Odometry,
+                                                         TOPIC_ODOM,
+                                                         self.odom_subscriber_callback,
+                                                         qos_profile_depth)
         
         self.publisher_ = self.create_publisher(Twist,
                                                 TOPIC_SAFE_CTRL,
@@ -27,9 +36,31 @@ class Control(Node):
 
         self.lin_vel = 0.0
         self.ang_vel = 0.0
+
+        self.state = np.array([0.0, 0.0, 0.0, 0.0])
         
+    def odom_subscriber_callback(self, msg):
+
+        # "msg" contains covariance - figure out how to extract that!
+
+        pose = msg.pose.pose # you can extract covariance from this as well
+        twist = msg.twist.twist# you can extract covariance from this as well
+
+        x = pose.position.x
+        y = pose.position.y
+        v = twist.linear.x
+
+        q = msg.pose.pose.orientation  # This is a geometry_msgs.msg.Quaternion
+        quat = [q.x, q.y, q.z, q.w]    # Extract to list of floats
+        r = R.from_quat(quat)
+        roll, pitch, yaw = r.as_euler('xyz') 
+        theta = yaw
+
+        # print(f"{type(x)}, {type(y)}, {type(v)}, {type(theta)}")
+
+        self.state = np.array([x, y, v, theta])
     
-    def subscriber_callback(self, msg):
+    def nominal_vel_subscriber_callback(self, msg):
         self.lin_vel = msg.linear.x
         self.ang_vel = msg.angular.z
 
@@ -57,7 +88,14 @@ class Control(Node):
 
         self.publisher_callback()
 
+        sol, H = safety.solve_qp(self.state, 0.01*np.ones((4, 4))) # Replace zeros with proper covariance (Look at odom callback)
+        u_sol = sol.primal[0][:2]
+
+        print("[state]:", np.array2string(self.state, precision=2))
         print(f"[vel] linear: {self.lin_vel:.2f}  angular: {self.ang_vel:.2f}" + (" (filtered)" if clamped else ""))
+        
+        print(f"[ctrl]: {u_sol}, [cbf_value]: {H}")
+
 
 def main(args=None):
     rclpy.init(args=args)

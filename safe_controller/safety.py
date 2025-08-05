@@ -88,8 +88,8 @@ list_L_f_2_h = []
 list_grad_h_b = []
 list_f_b = []
 
-def solve_qp(b):
-    x_estimated, sigma = cbf.extract_mu_sigma(b)
+def solve_qp(x_estimated, covariance):
+    b = cbf.get_b_vector(x_estimated, covariance)
 
     """Solve the CLF-CBF-QP using JAX & OSQP"""
     # Compute CLF components
@@ -156,7 +156,7 @@ def solve_qp(b):
     # Solve the QP using jaxopt OSQP
     sol = solver.run(params_obj=(Q, c), params_eq=A, params_ineq=(l, u)).params
     # return sol, V, h, L_g_V, Lg_Lf_h, rhs, L_f_h, L_f_2_h, grad_h_b, f_b
-    return sol, V
+    return sol, h
 
 x_traj = []  # Store trajectory
 x_meas = [] # Measurements

@@ -8,8 +8,6 @@ import select
 import signal
 import atexit
 
-MAX_LINEAR = 0.2
-MAX_ANGULAR = 2.0
 STEP_LINEAR = 0.05
 STEP_ANGULAR = 0.1
 
@@ -61,18 +59,6 @@ class Teleop(Node):
                     self.linear += lin_delta
                     self.angular += ang_delta
 
-                    clamped = False
-
-                    if abs(self.linear) > MAX_LINEAR:
-                        clamped = True
-                        self.linear = max(min(self.linear, MAX_LINEAR), -MAX_LINEAR)
-                        self.get_logger().warn(f"Linear velocity capped to ±{MAX_LINEAR}")
-
-                    if abs(self.angular) > MAX_ANGULAR:
-                        clamped = True
-                        self.angular = max(min(self.angular, MAX_ANGULAR), -MAX_ANGULAR)
-                        self.get_logger().warn(f"Angular velocity capped to ±{MAX_ANGULAR}")
-
                     if key == ' ':
                         self.linear = 0.0
                         self.angular = 0.0
@@ -82,7 +68,7 @@ class Teleop(Node):
                     twist.angular.z = self.angular
                     self.publisher.publish(twist)
 
-                    print(f"[vel] linear: {self.linear:.2f}  angular: {self.angular:.2f}" + (" (filtered)" if clamped else ""))
+                    print(f"[vel] linear: {self.linear:.2f}  angular: {self.angular:.2f}")
 
         except Exception as e:
             self.get_logger().error(f"Error: {e}")

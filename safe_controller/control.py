@@ -6,6 +6,9 @@ from geometry_msgs.msg import Twist
 TOPIC_NOM_CTRL = "/nominal_control"
 TOPIC_SAFE_CTRL = "/cmd_vel"
 
+MAX_LINEAR = 0.2
+MAX_ANGULAR = 2.0
+
 class Control(Node):
     def __init__(self):
         super().__init__('control')
@@ -29,7 +32,7 @@ class Control(Node):
         self.lin_vel = msg.linear.x
         self.ang_vel = msg.angular.z
 
-        self.publisher_callback()        
+        self.safety_filter()
 
     def publisher_callback(self):
         twist = Twist()
@@ -37,8 +40,23 @@ class Control(Node):
         twist.angular.z = self.ang_vel
         self.publisher_.publish(twist)
 
-        print(f"[vel] linear: {self.lin_vel:.2f}  angular: {self.ang_vel:.2f}")
-    
+    def safety_filter(self):
+
+        clamped = False
+
+        if abs(self.lin_vel) > MAX_LINEAR:
+            clamped = True
+            self.lin_vel = max(min(self.lin_vel, MAX_LINEAR), -MAX_LINEAR)
+            self.get_logger().warn(f"Linear velocity capped to ±{MAX_LINEAR}")
+
+        if abs(self.ang_vel) > MAX_ANGULAR:
+            clamped = True
+            self.ang_vel = max(min(self.ang_vel, MAX_ANGULAR), -MAX_ANGULAR)
+            self.get_logger().warn(f"Angular velocity capped to ±{MAX_ANGULAR}")
+
+        self.publisher_callback()
+
+        print(f"[vel] linear: {self.lin_vel:.2f}  angular: {self.ang_vel:.2f}" + (" (filtered)" if clamped else ""))
 
 def main(args=None):
     rclpy.init(args=args)

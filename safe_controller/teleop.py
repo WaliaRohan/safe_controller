@@ -29,10 +29,12 @@ def restore_terminal():
 
 atexit.register(restore_terminal)
 
-class SafeTeleop(Node):
+TOPIC_NOM_CTRL = '/nominal_control'
+
+class Teleop(Node):
     def __init__(self):
-        super().__init__('safe_teleop')
-        self.publisher = self.create_publisher(Twist, '/cmd_vel', 10)
+        super().__init__('teleop')
+        self.publisher = self.create_publisher(Twist, TOPIC_NOM_CTRL, 10)
         self.linear = 0.0
         self.angular = 0.0
         self.timer = self.create_timer(0.1, self.publish_cmd)
@@ -87,7 +89,7 @@ class SafeTeleop(Node):
 
 def main():
     rclpy.init()
-    node = SafeTeleop()
+    node = Teleop()
 
     # Ensure Ctrl+C works
     signal.signal(signal.SIGINT, lambda s, f: rclpy.shutdown())

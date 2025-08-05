@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'safe_teleop = safe_controller.safe_teleop:main',
+            'teleop = safe_controller.teleop:main',
+            'control = safe_controller.control:main'
         ],
     },
 )

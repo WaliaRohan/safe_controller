@@ -1,3 +1,4 @@
+import safe_controller.cbf as cbf
 
 import rclpy
 from rclpy.node import Node

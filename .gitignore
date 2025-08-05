@@ -1,0 +1,17 @@
+# ROS 2 build and install artifacts
+build/
+install/
+log/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# VSCode settings (optional)
+.vscode/
+
+# Colcon meta files
+.colcon/

@@ -63,12 +63,12 @@ max_steering_angle = 0.8 # rad (little over 45 deg)
 r_min = wheelbase/jnp.tan(max_steering_angle) # min turning radius for this angle
 
 # Control params
-lin_vel = 10.0 # m/s
-ang_vel = 0.3 # rad/s -> This is filtered later based on min turning radius
-u_max = jnp.array([lin_vel, ang_vel])
-m = len(u_max)
+lin_vel = 1.0 # m/s
+ang_vel = 0.2 # rad/s -> This is filtered later based on min turning radius
+# u_max = jnp.array([lin_vel, ang_vel])
+# m = len(u_max)
 clf_gain = 20.0 # CLF linear gain
-clf_slack_penalty = 1.0
+clf_slack_penalty = 100.0
 cbf_gain = 10.0  # CBF linear gain
 CBF_ON = True
 
@@ -88,7 +88,53 @@ list_L_f_2_h = []
 list_grad_h_b = []
 list_f_b = []
 
-def solve_qp(x_estimated, covariance):
+def solve_qp_ref(x_estimated, covariance, u_max, u_nom):
+    m = len(u_max)
+
+    b = cbf.get_b_vector(x_estimated, covariance)
+
+    # # Compute CBF components
+    h = cbf.h_b(b)
+    L_f_hb, L_g_hb, L_f_2_h, Lg_Lf_h, grad_h_b, f_b = cbf.h_dot_b(b, dynamics) # ∇h(x)
+
+    L_f_h = L_f_hb
+    L_g_h = L_g_hb
+
+    rhs, L_f_h, h_gain = cbf.h_b_r2_RHS(h, L_f_h, L_f_2_h, cbf_gain)
+
+    var_dim = m + 1
+
+    # Define Q matrix: Minimize ||u||^2 and slack (penalty*delta^2)
+    Q = jnp.eye(var_dim)
+    Q = Q.at[-1, -1].set(2*clf_slack_penalty)
+
+    # This accounts for reference trajectory
+    c = jnp.append(-2.0*u_nom.flatten(), 0.0)
+
+    A = jnp.vstack([
+        jnp.concatenate([-Lg_Lf_h, jnp.array([0.0])]), # -LgLfh u       <= -[alpha1 alpha2].T @ [Lfh h] + Lf^2h
+        jnp.eye(var_dim)
+    ])
+
+    u = jnp.hstack([
+        (rhs).squeeze(),                            # CBF constraint: rhs = -[alpha1 alpha2].T [Lfh h] + Lf^2h
+        u_max, 
+        jnp.inf # no upper limit on slack
+    ])
+
+    l = jnp.hstack([
+        -jnp.inf, # No lower limit on CBF condition
+        -u_max,
+        0.0 # slack can't be negative
+    ])
+
+    # Solve the QP using jaxopt OSQP
+    sol = solver.run(params_obj=(Q, c), params_eq=A, params_ineq=(l, u)).params
+    return sol, h
+
+def solve_qp(x_estimated, covariance, u_max, CLF_ON=False):
+    m = len(u_max)
+
     b = cbf.get_b_vector(x_estimated, covariance)
 
     """Solve the CLF-CBF-QP using JAX & OSQP"""
@@ -114,19 +160,8 @@ def solve_qp(x_estimated, covariance):
     Q = jnp.eye(var_dim)
     Q = Q.at[-1, -1].set(2*clf_slack_penalty)
 
-    # Q = jnp.array([
-    #     [1, 0],
-    #     [0, 2*clf_slack_penalty]
-    # ])
-    
     c = jnp.zeros(var_dim)  # No linear cost term
 
-    # A = jnp.array([
-    #     [L_g_V.flatten()[0].astype(float), -1.0], #  LgV u - delta <= -LfV - gamma(V) 
-    #     [-Lg_Lf_h.flatten()[0].astype(float), 0.0], # -LgLfh u       <= -[alpha1 alpha2].T @ [Lfh h] + Lf^2h
-    #     [1, 0],
-    #     [0, 1]
-    # ])
     A = jnp.vstack([
         jnp.concatenate([L_g_V, jnp.array([-1.0])]), #  LgV u - delta <= -LfV - gamma(V) 
         jnp.concatenate([-Lg_Lf_h, jnp.array([0.0])]), # -LgLfh u       <= -[alpha1 alpha2].T @ [Lfh h] + Lf^2h
@@ -155,7 +190,6 @@ def solve_qp(x_estimated, covariance):
 
     # Solve the QP using jaxopt OSQP
     sol = solver.run(params_obj=(Q, c), params_eq=A, params_ineq=(l, u)).params
-    # return sol, V, h, L_g_V, Lg_Lf_h, rhs, L_f_h, L_f_2_h, grad_h_b, f_b
     return sol, h
 
 x_traj = []  # Store trajectory

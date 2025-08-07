@@ -35,22 +35,40 @@ class Control(Node):
                                                 TOPIC_SAFE_CTRL,
                                                 qos_profile_depth)
 
-        self.lin_vel = 0.0
-        self.ang_vel = 0.0
+        self.nom_lin_vel = 0.0
+        self.nom_ang_vel = 0.0
 
         self.lin_vel_cmd = 0.0
         self.ang_vel_cmd = 0.0
 
-        self.state = np.array([0.0, 0.0, 0.0, 0.0])
+        self.state = None
+        self.state_initialized = False
+        self.stepper_initialized = False
+
+        while not self.state_initialized:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        self.stepper = safety.Stepper(t_init=self.get_time(),
+                                      x_initial_measurement=self.state) # CHANGE THIS LATER!
+        self.stepper_initialized = True
+
+        rate = 100.0 # Hz
+        self.safety_timer = self.create_timer((1/rate), self.safety_filter)
+        self.publisher_timer = self.create_timer((1/rate), self.publisher_callback)
 
         print("Safe Controller Initialized")
-        
-    def odom_subscriber_callback(self, msg):
 
+    def get_time(self):
+        t = self.get_clock().now().seconds_nanoseconds()
+        secs, nsecs = t
+        time_in_seconds = secs + nsecs * 1e-9
+        return time_in_seconds
+
+    def odom_subscriber_callback(self, msg):
         # "msg" contains covariance - figure out how to extract that!
         # https://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/PoseWithCovariance.html
         # https://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/TwistWithCovariance.html
-        
+
         pose = msg.pose.pose # you can extract covariance from this as well
         twist = msg.twist.twist# you can extract covariance from this as well
 
@@ -68,13 +86,15 @@ class Control(Node):
 
         self.state = np.array([x, y, v, theta])
 
-        self.safety_filter()
+        if not self.state_initialized:
+            self.state_initialized = True
+        
+        if self.stepper_initialized:
+            self.stepper.step_measure(self.state)
     
     def nominal_vel_subscriber_callback(self, msg):
-        self.lin_vel = msg.linear.x
-        self.ang_vel = msg.angular.z
-
-        # self.safety_filter()
+        self.nom_lin_vel = msg.linear.x
+        self.nom_ang_vel = msg.angular.z
 
     def publisher_callback(self):
         twist = Twist()
@@ -82,22 +102,22 @@ class Control(Node):
         twist.angular.z = self.ang_vel_cmd
         self.publisher_.publish(twist)
 
-    def safety_filter(self):
+        if self.state_initialized and self.stepper_initialized:
+            self.stepper.step_predict(self.get_time(), np.array([self.lin_vel_cmd, self.ang_vel_cmd]))
 
-        # sol, H = safety.solve_qp(self.state, 0.01*np.ones((4, 4)), U_MAX) # Replace zeros with proper covariance (Look at odom callback)
-        
-        u_nom = np.array([self.lin_vel, self.ang_vel])
-        sol, H = safety.solve_qp_ref(self.state, 0.01*np.ones((4, 4)), U_MAX, u_nom)
+    def safety_filter(self):
+        u_nom = np.array([self.nom_lin_vel, self.nom_ang_vel])
+        sol, H = self.stepper.solve_qp_ref(self.state, 0.01*np.ones((4, 4)), U_MAX, u_nom)  # Replace zeros with proper covariance (Look at odom callback)
         u_sol = sol.primal[0][:2]
         u_opt = np.clip(u_sol, -U_MAX, U_MAX)
 
         self.lin_vel_cmd = np.float64(u_opt[0])
         self.ang_vel_cmd = np.float64(u_opt[1])
 
-        self.publisher_callback()
+        # self.publisher_callback()
 
         print("[state]:", np.array2string(self.state, precision=2))
-        print(f"[vel] linear: {self.lin_vel:.2f}  angular: {self.ang_vel:.2f}")
+        print(f"[vel_cmd] linear: {self.lin_vel_cmd:.2f}  angular: {self.ang_vel_cmd:.2f}")
         
         print(f"[ctrl]: {u_opt}, [cbf_value]: {H}")
 

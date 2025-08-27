@@ -4,12 +4,13 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from scipy.spatial.transform import Rotation as R
 
 TOPIC_NOM_CTRL = "/nominal_control"
-TOPIC_SAFE_CTRL = "/cmd_vel"
-TOPIC_ODOM = "/odom"
+TOPIC_SAFE_CTRL = "/big_cheese/cmd_vel"
+TOPIC_ODOM = "/vicon_pose"
 
 MAX_LINEAR = 0.5
 MAX_ANGULAR = 0.25
@@ -19,6 +20,10 @@ class Control(Node):
     def __init__(self):
         super().__init__('control')
 
+        topics = self.get_topic_names_and_types()
+        topic_names = [t[0] for t in topics]
+        print(topic_names)
+
         qos_profile_depth = 10 # This is the message queue size
         
         self.nominal_vel_subscriber_ = self.create_subscription(Twist,
@@ -26,7 +31,7 @@ class Control(Node):
                                                     self.nominal_vel_subscriber_callback,
                                                     qos_profile_depth)
         
-        self.odom_subscriber_ = self.create_subscription(Odometry,
+        self.odom_subscriber_ = self.create_subscription(PoseStamped,
                                                          TOPIC_ODOM,
                                                          self.odom_subscriber_callback,
                                                          qos_profile_depth)
@@ -45,6 +50,8 @@ class Control(Node):
         self.state_initialized = False
         self.stepper_initialized = False
 
+        print("[Control] Trying to initialize state")
+
         while not self.state_initialized:
             rclpy.spin_once(self, timeout_sec=0.1)
 
@@ -56,7 +63,7 @@ class Control(Node):
         self.safety_timer = self.create_timer((1/rate), self.safety_filter)
         self.publisher_timer = self.create_timer((1/rate), self.publisher_callback)
 
-        print("Safe Controller Initialized")
+        print("[Control] Safe Controller Initialized")
 
     def get_time(self):
         t = self.get_clock().now().seconds_nanoseconds()
@@ -65,18 +72,20 @@ class Control(Node):
         return time_in_seconds
 
     def odom_subscriber_callback(self, msg):
+        print("[Control] Got odom callback")
+
         # "msg" contains covariance - figure out how to extract that!
         # https://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/PoseWithCovariance.html
         # https://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/TwistWithCovariance.html
 
-        pose = msg.pose.pose # you can extract covariance from this as well
-        twist = msg.twist.twist# you can extract covariance from this as well
+        pose = msg.pose # you can extract covariance from this as well
+        # twist = msg.twist.twist# you can extract covariance from this as well
 
         x = pose.position.x
         y = pose.position.y
-        v = twist.linear.x
+        # v = twist.linear.x
 
-        q = msg.pose.pose.orientation  # This is a geometry_msgs.msg.Quaternion
+        q = pose.orientation  # This is a geometry_msgs.msg.Quaternion
         quat = [q.x, q.y, q.z, q.w]    # Extract to list of floats
         r = R.from_quat(quat)
         roll, pitch, yaw = r.as_euler('xyz') 
@@ -84,7 +93,8 @@ class Control(Node):
 
         # print(f"{type(x)}, {type(y)}, {type(v)}, {type(theta)}")
 
-        self.state = np.array([x, y, v, theta])
+        assumed_initial_v = 0.0
+        self.state = np.array([x, y, assumed_initial_v, theta])
 
         if not self.state_initialized:
             self.state_initialized = True
@@ -113,6 +123,8 @@ class Control(Node):
 
         self.lin_vel_cmd = np.float64(u_opt[0])
         self.ang_vel_cmd = np.float64(u_opt[1])
+
+        self.state[2] = self.lin_vel_cmd
 
         # self.publisher_callback()
 

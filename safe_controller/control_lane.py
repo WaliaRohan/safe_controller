@@ -1,0 +1,148 @@
+import safe_controller.safety as safety
+import numpy as np
+
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import Odometry
+from scipy.spatial.transform import Rotation as R
+
+TOPIC_NOM_CTRL = "/nominal_control"
+TOPIC_SAFE_CTRL = "/cmd_vel"
+TOPIC_ODOM = "/lane_position"
+
+MAX_LINEAR = 0.5
+MAX_ANGULAR = 0.25
+U_MAX = np.array([MAX_LINEAR, MAX_ANGULAR])
+
+class Control(Node):
+    def __init__(self):
+        super().__init__('control')
+
+        topics = self.get_topic_names_and_types()
+        topic_names = [t[0] for t in topics]
+        print(topic_names)
+
+        qos_profile_depth = 10 # This is the message queue size
+        
+        self.nominal_vel_subscriber_ = self.create_subscription(Twist,
+                                                    TOPIC_NOM_CTRL,
+                                                    self.nominal_vel_subscriber_callback,
+                                                    qos_profile_depth)
+        
+        self.odom_subscriber_ = self.create_subscription(PoseStamped,
+                                                         TOPIC_ODOM,
+                                                         self.odom_subscriber_callback,
+                                                         qos_profile_depth)
+        
+        self.publisher_ = self.create_publisher(Twist,
+                                                TOPIC_SAFE_CTRL,
+                                                qos_profile_depth)
+
+        self.nom_lin_vel = 0.0
+        self.nom_ang_vel = 0.0
+
+        self.lin_vel_cmd = 0.0
+        self.ang_vel_cmd = 0.0
+
+        self.state = None
+        self.state_initialized = False
+        self.stepper_initialized = False
+
+        print("[Control] Trying to initialize state")
+
+        while not self.state_initialized:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        self.stepper = safety.Stepper(t_init=self.get_time(),
+                                      x_initial_measurement=self.state) # CHANGE THIS LATER!
+        self.stepper_initialized = True
+
+        rate = 100.0 # Hz
+        self.safety_timer = self.create_timer((1/rate), self.safety_filter)
+        self.publisher_timer = self.create_timer((1/rate), self.publisher_callback)
+
+        print("[Control] Safe Controller Initialized")
+
+    def get_time(self):
+        t = self.get_clock().now().seconds_nanoseconds()
+        secs, nsecs = t
+        time_in_seconds = secs + nsecs * 1e-9
+        return time_in_seconds
+
+    def odom_subscriber_callback(self, msg):
+        print("[Control] Got odom callback")
+
+        # "msg" contains covariance - figure out how to extract that!
+        # https://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/PoseWithCovariance.html
+        # https://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/TwistWithCovariance.html
+
+        pose = msg.pose # you can extract covariance from this as well
+        # twist = msg.twist.twist# you can extract covariance from this as well
+
+        x = pose.position.x
+        y = pose.position.y
+        # v = twist.linear.x
+
+        q = pose.orientation  # This is a geometry_msgs.msg.Quaternion
+        quat = [q.x, q.y, q.z, q.w]    # Extract to list of floats
+        r = R.from_quat(quat)
+        roll, pitch, yaw = r.as_euler('xyz') 
+        theta = yaw
+
+        # print(f"{type(x)}, {type(y)}, {type(v)}, {type(theta)}")
+
+        assumed_initial_v = 0.0
+        self.state = np.array([x, y, assumed_initial_v, theta])
+
+        if not self.state_initialized:
+            self.state_initialized = True
+        
+        if self.stepper_initialized:
+            self.stepper.step_measure(self.state)
+    
+    def nominal_vel_subscriber_callback(self, msg):
+        self.nom_lin_vel = msg.linear.x
+        self.nom_ang_vel = msg.angular.z
+
+    def publisher_callback(self):
+        twist = Twist()
+        twist.linear.x = self.lin_vel_cmd
+        twist.angular.z = self.ang_vel_cmd
+        self.publisher_.publish(twist)
+
+        if self.state_initialized and self.stepper_initialized:
+            self.stepper.step_predict(self.get_time(), np.array([self.lin_vel_cmd, self.ang_vel_cmd]))
+
+    def safety_filter(self):
+        u_nom = np.array([self.nom_lin_vel, self.nom_ang_vel])
+        sol, H = self.stepper.solve_qp_ref(self.state, 0.01*np.ones((4, 4)), U_MAX, u_nom)  # Replace zeros with proper covariance (Look at odom callback)
+        u_sol = sol.primal[0][:2]
+        u_opt = np.clip(u_sol, -U_MAX, U_MAX)
+
+        self.lin_vel_cmd = np.float64(u_opt[0])
+        self.ang_vel_cmd = np.float64(u_opt[1])
+
+        self.state[2] = self.lin_vel_cmd
+
+        # self.publisher_callback()
+
+        print("[state]:", np.array2string(self.state, precision=2))
+        print(f"[vel_cmd] linear: {self.lin_vel_cmd:.2f}  angular: {self.ang_vel_cmd:.2f}")
+        
+        print(f"[ctrl]: {u_opt}, [cbf_value]: {H}")
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = Control()
+
+    try:
+        rclpy.spin(node)
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()

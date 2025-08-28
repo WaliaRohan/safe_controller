@@ -9,7 +9,7 @@ from nav_msgs.msg import Odometry
 from scipy.spatial.transform import Rotation as R
 
 TOPIC_NOM_CTRL = "/nominal_control"
-TOPIC_SAFE_CTRL = "/big_cheese/cmd_vel"
+TOPIC_SAFE_CTRL = "/cmd_vel"
 TOPIC_ODOM = "/vicon_pose"
 
 MAX_LINEAR = 0.5

@@ -7,7 +7,7 @@ from jax import grad, jit
 from jaxopt import BoxOSQP as OSQP
 
 from cbfs import BeliefCBF
-from cbfs import vanilla_clf_dubins_y as clf
+from cbfs import vanilla_clf_dubins as clf
 from dynamics import *
 from estimators import *
 from functools import partial

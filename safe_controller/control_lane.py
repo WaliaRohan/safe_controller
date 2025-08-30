@@ -5,12 +5,13 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import PoseStamped
-from nav_msgs.msg import Odometry
+from std_msgs.msg import Float32
 from scipy.spatial.transform import Rotation as R
 
 TOPIC_NOM_CTRL = "/nominal_control"
 TOPIC_SAFE_CTRL = "/cmd_vel"
-TOPIC_ODOM = "/lane_position"
+TOPIC_ODOM = "/vicon_pose"
+TOPIC_LANE_POSE = "/lane_position"
 
 MAX_LINEAR = 0.5
 MAX_ANGULAR = 0.25
@@ -26,15 +27,20 @@ class Control(Node):
 
         qos_profile_depth = 10 # This is the message queue size
         
-        self.nominal_vel_subscriber_ = self.create_subscription(Twist,
-                                                    TOPIC_NOM_CTRL,
-                                                    self.nominal_vel_subscriber_callback,
-                                                    qos_profile_depth)
+        # self.nominal_vel_subscriber_ = self.create_subscription(Twist,
+        #                                             TOPIC_NOM_CTRL,
+        #                                             self.nominal_vel_subscriber_callback,
+        #                                             qos_profile_depth)
         
-        self.odom_subscriber_ = self.create_subscription(PoseStamped,
-                                                         TOPIC_ODOM,
-                                                         self.odom_subscriber_callback,
-                                                         qos_profile_depth)
+        # self.odom_subscriber_ = self.create_subscription(PoseStamped,
+        #                                                  TOPIC_ODOM,
+        #                                                  self.odom_subscriber_callback,
+        #                                                  qos_profile_depth)
+        
+        self.perception_subscriber_callback_ = self.create_subscription(Float32,
+                                                                        TOPIC_LANE_POSE,
+                                                                        self.perception_subscriber_callback,
+                                                                        qos_profile_depth)
         
         self.publisher_ = self.create_publisher(Twist,
                                                 TOPIC_SAFE_CTRL,
@@ -46,7 +52,9 @@ class Control(Node):
         self.lin_vel_cmd = 0.0
         self.ang_vel_cmd = 0.0
 
-        self.state = None
+        self.wall_y = 0.61 # Lane width in m (24 inches)
+
+        self.state = np.array([0.5, self.wall_y/2, 0.5, 0.0])
         self.state_initialized = False
         self.stepper_initialized = False
 
@@ -62,6 +70,7 @@ class Control(Node):
         rate = 100.0 # Hz
         self.safety_timer = self.create_timer((1/rate), self.safety_filter)
         self.publisher_timer = self.create_timer((1/rate), self.publisher_callback)
+        self.publisher_timer = self.create_timer((1/rate), self.nominal_vel_loop)
 
         print("[Control] Safe Controller Initialized")
 
@@ -71,67 +80,64 @@ class Control(Node):
         time_in_seconds = secs + nsecs * 1e-9
         return time_in_seconds
 
-    def odom_subscriber_callback(self, msg):
-        print("[Control] Got odom callback")
-
-        # "msg" contains covariance - figure out how to extract that!
-        # https://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/PoseWithCovariance.html
-        # https://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/TwistWithCovariance.html
-
-        pose = msg.pose # you can extract covariance from this as well
-        # twist = msg.twist.twist# you can extract covariance from this as well
-
-        x = pose.position.x
-        y = pose.position.y
-        # v = twist.linear.x
-
-        q = pose.orientation  # This is a geometry_msgs.msg.Quaternion
-        quat = [q.x, q.y, q.z, q.w]    # Extract to list of floats
-        r = R.from_quat(quat)
-        roll, pitch, yaw = r.as_euler('xyz') 
-        theta = yaw
-
-        # print(f"{type(x)}, {type(y)}, {type(v)}, {type(theta)}")
-
-        assumed_initial_v = 0.0
-        self.state = np.array([x, y, assumed_initial_v, theta])
+    def perception_subscriber_callback(self, msg):
+        # 
 
         if not self.state_initialized:
+            print("[Control_lane] Got lane_pos, initializing state")
             self.state_initialized = True
         
         if self.stepper_initialized:
-            self.stepper.step_measure(self.state)
-    
-    def nominal_vel_subscriber_callback(self, msg):
-        self.nom_lin_vel = msg.linear.x
-        self.nom_ang_vel = msg.angular.z
+             # Adding NaN to ensure x, v, and theta aren't used anywhere else
+            # measurement = np.array([np.NAN,
+            #                         msg.data,
+            #                         np.NAN,
+            #                         np.NAN])
+            
+            self.stepper.step_measure(msg.data)
+            self.state, cov = self.stepper.estimator.get_belief()
+            # print(f"{np.array2string(np.asarray(self.state), precision=3)}, {np.trace(np.asarray(cov)):.3f}")
+
+    def nominal_vel_loop(self):
+        """
+        Sets the nominal velocity to strictly forward
+        """
+        self.nom_lin_vel = 0.5
+        self.nom_ang_vel = 0.0
 
     def publisher_callback(self):
+        """
+        Publishes filtered control command
+        """
         twist = Twist()
         twist.linear.x = self.lin_vel_cmd
         twist.angular.z = self.ang_vel_cmd
         self.publisher_.publish(twist)
 
-        if self.state_initialized and self.stepper_initialized:
-            self.stepper.step_predict(self.get_time(), np.array([self.lin_vel_cmd, self.ang_vel_cmd]))
+        # if self.state_initialized and self.stepper_initialized:
+        #     self.stepper.step_predict(self.get_time(), np.array([self.lin_vel_cmd, self.ang_vel_cmd]))
+        #     self.state, _ = self.stepper.estimator.get_belief()
 
     def safety_filter(self):
+        """
+            Calls minimally invasive CBF QP to calculate safety commands
+        """
         u_nom = np.array([self.nom_lin_vel, self.nom_ang_vel])
-        sol, H = self.stepper.solve_qp_ref(self.state, 0.01*np.ones((4, 4)), U_MAX, u_nom)  # Replace zeros with proper covariance (Look at odom callback)
+        sol, h, h_2 = self.stepper.solve_qp_ref_lane(self.state, 0.01*np.ones((4, 4)), U_MAX, u_nom)  # Replace zeros with proper covariance (Look at odom callback)
         u_sol = sol.primal[0][:2]
         u_opt = np.clip(u_sol, -U_MAX, U_MAX)
 
         self.lin_vel_cmd = np.float64(u_opt[0])
         self.ang_vel_cmd = np.float64(u_opt[1])
 
-        self.state[2] = self.lin_vel_cmd
+        self.state = self.state.at[2].set(self.lin_vel_cmd)
 
         # self.publisher_callback()
 
-        print("[state]:", np.array2string(self.state, precision=2))
-        print(f"[vel_cmd] linear: {self.lin_vel_cmd:.2f}  angular: {self.ang_vel_cmd:.2f}")
+        # print("[state]:", np.array2string(self.state, precision=2))
+        # print(f"[vel_cmd] linear: {self.lin_vel_cmd:.2f}  angular: {self.ang_vel_cmd:.2f}")
         
-        print(f"[ctrl]: {u_opt}, [cbf_value]: {H}")
+        # print(f"[ctrl]: {u_opt}, [cbf 1 value (y < 1)]: {h}, [cbf 2 value (y > -1)]: {h_2}")
 
 
 def main(args=None):

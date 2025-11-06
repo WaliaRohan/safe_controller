@@ -1,6 +1,6 @@
 # CBF
 import sys
-sys.path.append("/root/cbf_lite")
+sys.path.append("/home/ubuntu/cbf_lite")
 
 import jax.numpy as jnp
 from jax import grad, jit

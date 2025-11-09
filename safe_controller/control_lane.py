@@ -13,8 +13,8 @@ TOPIC_SAFE_CTRL = "/cmd_vel"
 TOPIC_ODOM = "/vicon_pose"
 TOPIC_LANE_POSE = "/lane_position"
 
-MAX_LINEAR = 0.5
-MAX_ANGULAR = 0.25
+MAX_LINEAR = 0.75
+MAX_ANGULAR = 0.75
 U_MAX = np.array([MAX_LINEAR, MAX_ANGULAR])
 
 class Control(Node):
@@ -97,6 +97,7 @@ class Control(Node):
             self.stepper.step_measure(msg.data)
             self.state, cov = self.stepper.estimator.get_belief()
             # print(f"{np.array2string(np.asarray(self.state), precision=3)}, {np.trace(np.asarray(cov)):.3f}")
+            # print(f"{np.array2string(np.asarray(self.state), precision=3)}, {cov[1, 1]:.3f}, {self.stepper.estimator.K[1, 1]:.3f}")
 
     def nominal_vel_loop(self):
         """
@@ -125,20 +126,14 @@ class Control(Node):
         u_nom = np.array([self.nom_lin_vel, self.nom_ang_vel])
         sol, h, h_2 = self.stepper.solve_qp_ref_lane(self.state, 0.01*np.ones((4, 4)), U_MAX, u_nom)  # Replace zeros with proper covariance (Look at odom callback)
         u_sol = sol.primal[0][:2]
-        u_opt = np.clip(u_sol, -U_MAX, U_MAX)
+        u_opt = np.clip(u_sol, -U_MAX @ np.array([[0.025, 0.0], [0.0, 1.0]]), U_MAX)
 
         self.lin_vel_cmd = np.float64(u_opt[0])
         self.ang_vel_cmd = np.float64(u_opt[1])
 
         self.state = self.state.at[2].set(self.lin_vel_cmd)
-
-        # self.publisher_callback()
-
-        # print("[state]:", np.array2string(self.state, precision=2))
-        # print(f"[vel_cmd] linear: {self.lin_vel_cmd:.2f}  angular: {self.ang_vel_cmd:.2f}")
         
-        # print(f"[ctrl]: {u_opt}, [cbf 1 value (y < 1)]: {h}, [cbf 2 value (y > -1)]: {h_2}")
-
+        print(f"[{self.lin_vel_cmd: .3f}, {self.ang_vel_cmd: .3f}], [Left CBF (wall_y > y)]: {h_2:.3f}, [Right CBF (y > 0)]: {h:.3f}")
 
 def main(args=None):
     rclpy.init(args=args)

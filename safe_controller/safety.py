@@ -21,9 +21,9 @@ class Stepper():
 
         # Sensor Params
         # mu_u = 0.1
-        mu_u = -0.76917669977005
+        mu_u = -0.7 # -0.76917669977005
         sigma_u = jnp.sqrt(0.01) # Standard deviation
-        mu_v = 0.335
+        mu_v = 0.3 # 0.335
         sigma_v = jnp.sqrt(0.0001) # Standard deviation
 
         # State initialization, goal and constraints
@@ -45,17 +45,17 @@ class Stepper():
 
         self.x_estimated, self.p_estimated = self.estimator.get_belief()
 
-        # Define first CBF (y < 1)
+        # Right CBF (y > 0)
         n = self.dynamics.state_dim
-        alpha = jnp.array([0.0, -1.0, 0.0, 0.0])
-        beta = jnp.array([-wall_y])
+        alpha = jnp.array([0.0, 1.0, 0.0, 0.0])
+        beta = jnp.array([0-0.3])
         delta = 0.001  # Probability of failure threshold
         self.cbf = BeliefCBF(alpha, beta, delta, n)
 
-        # Define second CBF (y > 1)
+        # Left CBF (wall_y > y)
         n = self.dynamics.state_dim
-        alpha2 = jnp.array([0.0, 1.0, 0.0, 0.0])
-        beta = jnp.array([-wall_y])
+        alpha2 = jnp.array([0.0, -1.0, 0.0, 0.0])
+        beta = jnp.array([-wall_y-0.7])
         delta = 0.001  # Probability of failure threshold
         self.cbf2 = BeliefCBF(alpha2, beta, delta, n)
 
@@ -66,8 +66,8 @@ class Stepper():
 
         # Control params
         self.clf_gain = 20.0 # CLF linear gain
-        self.clf_slack_penalty = 100.0
-        self.cbf_gain = 10.0  # CBF linear gain
+        self.clf_slack_penalty = 10.0
+        self.cbf_gain = 5.0 # CBF linear gain
         CBF_ON = True
 
         # Autodiff: Compute Gradients for CLF
@@ -119,7 +119,7 @@ class Stepper():
         l = jnp.hstack([
             -jnp.inf, # No lower limit on CBF condition
             -jnp.inf, # 2nd CBF
-            -u_max,
+            -u_max, # Cap lower lin speed at 25 % of high linear speed value
             0.0 # slack can't be negative
         ])
 

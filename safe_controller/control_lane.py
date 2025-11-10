@@ -13,8 +13,8 @@ TOPIC_SAFE_CTRL = "/cmd_vel"
 TOPIC_ODOM = "/vicon_pose"
 TOPIC_LANE_POSE = "/lane_position"
 
-MAX_LINEAR = 0.75
-MAX_ANGULAR = 0.75
+MAX_LINEAR = 0.5
+MAX_ANGULAR = 10.0
 U_MAX = np.array([MAX_LINEAR, MAX_ANGULAR])
 
 class Control(Node):
@@ -133,7 +133,7 @@ class Control(Node):
 
         self.state = self.state.at[2].set(self.lin_vel_cmd)
         
-        print(f"[{self.lin_vel_cmd: .3f}, {self.ang_vel_cmd: .3f}], [Left CBF (wall_y > y)]: {h_2:.3f}, [Right CBF (y > 0)]: {h:.3f}")
+        print(f"[{u_sol[0]: .3f}, {u_sol[1]: .3f}], [Left CBF (wall_y > y)]: {h_2:.3f}, [Right CBF (y > 0)]: {h:.3f}")
 
 def main(args=None):
     rclpy.init(args=args)

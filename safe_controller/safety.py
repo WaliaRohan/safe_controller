@@ -48,26 +48,20 @@ class Stepper():
         # Right CBF (y > 0)
         n = self.dynamics.state_dim
         alpha = jnp.array([0.0, 1.0, 0.0, 0.0])
-        beta = jnp.array([0-0.3])
+        beta = jnp.array([0-0.1])
         delta = 0.001  # Probability of failure threshold
         self.cbf = BeliefCBF(alpha, beta, delta, n)
 
         # Left CBF (wall_y > y)
         n = self.dynamics.state_dim
         alpha2 = jnp.array([0.0, -1.0, 0.0, 0.0])
-        beta = jnp.array([-wall_y-0.7])
+        beta = jnp.array([-wall_y-0.5])
         delta = 0.001  # Probability of failure threshold
         self.cbf2 = BeliefCBF(alpha2, beta, delta, n)
 
-        # Dynamic constraints
-        wheelbase = 0.165 # Wheelbase - measured directly from deepracer
-        max_steering_angle = 0.8 # rad (little over 45 deg)
-        r_min = wheelbase/jnp.tan(max_steering_angle) # min turning radius for this angle
-
         # Control params
-        self.clf_gain = 20.0 # CLF linear gain
         self.clf_slack_penalty = 10.0
-        self.cbf_gain = 5.0 # CBF linear gain
+        self.cbf_gain = 3.0 # CBF linear gain
         CBF_ON = True
 
         # Autodiff: Compute Gradients for CLF
@@ -119,7 +113,7 @@ class Stepper():
         l = jnp.hstack([
             -jnp.inf, # No lower limit on CBF condition
             -jnp.inf, # 2nd CBF
-            -u_max, # Cap lower lin speed at 25 % of high linear speed value
+            -u_max @ jnp.array([[1.0, 0.0], [0.0, 1.0]]), # Cap lower lin speed at 25 % of high linear speed value
             0.0 # slack can't be negative
         ])
 

@@ -7,11 +7,13 @@ from geometry_msgs.msg import Twist
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Float32
 from scipy.spatial.transform import Rotation as R
+from std_msgs.msg import Float32MultiArray
 
 TOPIC_NOM_CTRL = "/nominal_control"
 TOPIC_SAFE_CTRL = "/cmd_vel"
 TOPIC_ODOM = "/vicon_pose"
 TOPIC_LANE_POSE = "/lane_position"
+TOPIC_CONTROL_STATS = "/control_stats"
 
 MAX_LINEAR = 0.5
 MAX_ANGULAR = 10.0
@@ -45,6 +47,10 @@ class Control(Node):
         self.publisher_ = self.create_publisher(Twist,
                                                 TOPIC_SAFE_CTRL,
                                                 qos_profile_depth)
+
+        self.control_stats_publisher_ = self.create_publisher(Float32MultiArray,
+                                                              TOPIC_CONTROL_STATS,
+                                                              10)
 
         self.nom_lin_vel = 0.0
         self.nom_ang_vel = 0.0
@@ -134,6 +140,11 @@ class Control(Node):
         self.state = self.state.at[2].set(self.lin_vel_cmd)
         
         print(f"[{u_sol[0]: .3f}, {u_sol[1]: .3f}], [Left CBF (wall_y > y)]: {h_2:.3f}, [Right CBF (y > 0)]: {h:.3f}")
+
+        msg = Float32MultiArray()
+        msg.data = [float(u_sol[0]), float(u_sol[1]), float(h_2), float(h)]
+
+        self.control_stats_publisher_.publish(msg)
 
 def main(args=None):
     rclpy.init(args=args)

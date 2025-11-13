@@ -78,18 +78,20 @@ print(f"Synchronized {n_frames} frames across all topics.")
 
 # --- Figure layout ---
 fig = plt.figure(figsize=(13, 8))
-gs = fig.add_gridspec(3, 2, height_ratios=[1, 1, 1])
+gs = fig.add_gridspec(2, 4, height_ratios=[1.5, 1]) #, width_ratios=[1., 1])
 
 # Top row: images
-ax_rgb  = fig.add_subplot(gs[0, 0])
-ax_gray = fig.add_subplot(gs[0, 1])
-ax_lane = fig.add_subplot(gs[1, 0])
-ax_ctrl = fig.add_subplot(gs[1, 1])
-ax_cbf  = fig.add_subplot(gs[2, :])
+ax_rgb  = fig.add_subplot(gs[1, 0])
+ax_gray = fig.add_subplot(gs[1, 1])
+ax_lane = fig.add_subplot(gs[1, 2])
+ax_ctrl = fig.add_subplot(gs[1, 3])
+ax_cbf  = fig.add_subplot(gs[0, :])
 
-fig.tight_layout(pad=3.0)
+fig.tight_layout(pad=2.0)
 
 # --- Images ---
+pos = ax_rgb.get_position()
+ax_rgb.set_position([pos.x0 - 0.035, pos.y0 - 0.07, pos.width * 1.4, pos.height * 1.4])
 im_rgb = ax_rgb.imshow(sync_rgb[0])
 ax_rgb.set_title("RGB Image")
 ax_rgb.axis("off")
@@ -101,13 +103,14 @@ ax_gray.axis("off")
 # --- Lane localization plot (rotated view) ---
 ax_lane.set_xlim(-0.1, 1.1)
 ax_lane.set_ylim(-1, 1)
-ax_lane.set_aspect('equal')
-ax_lane.set_title("Lane Localization View (Top-down)")
-ax_lane.set_xlabel("Lane Width (0 = Left, 1 = Right)")
+# ax_lane.set_aspect('equal')
+ax_lane.set_title("Lane Localization (0 = Left, 1 = Right)")
+# ax_lane.set_xlabel("Lane Localization (0 = Left, 1 = Right)")
 ax_lane.axvline(0, color='blue', linestyle='--', label='Left Lane')
 ax_lane.axvline(1, color='green', linestyle='--', label='Right Lane')
 lane_marker, = ax_lane.plot([], [], 'ro', markersize=8, label='Vehicle')
-ax_lane.legend(loc="upper right")
+ax_lane.legend(loc="upper center")
+
 # --- Control vector plot ---
 ax_ctrl.set_xlim(-1.5, 1.5)
 ax_ctrl.set_ylim(-1.5, 1.5)
@@ -142,8 +145,6 @@ def update(frame):
     lin, ang = sync_ctrl[frame]
     lin_rot, ang_rot = -ang, lin
     quiv.set_UVC(lin_rot, ang_rot)
-
-    
 
     # CBF
     cbf_x.append(frame)

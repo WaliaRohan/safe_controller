@@ -119,6 +119,7 @@ def update(frame):
 
     # Control vector (updated in place)
     lin, ang = ctrl_vals[frame]
+    lin, ang = -ang, lin
     norm = np.linalg.norm([lin, ang])
     if norm > 1e-6:
         lin /= norm

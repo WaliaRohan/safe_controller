@@ -15,7 +15,6 @@ bag_path = "/home/ubuntu/ros_ws/experiment_bag"
 
 # --- Detect storage backend ---
 storage_id = "mcap" if any(f.endswith(".mcap") for f in os.listdir(bag_path)) else "sqlite3"
-
 reader = rosbag2_py.SequentialReader()
 storage_options = rosbag2_py.StorageOptions(uri=bag_path, storage_id=storage_id)
 converter_options = rosbag2_py.ConverterOptions("", "")
@@ -60,7 +59,7 @@ def find_nearest(target_t, msg_list):
     after_t, after_val = msg_list[idx]
     return before_val if abs(target_t - before_t) < abs(target_t - after_t) else after_val
 
-# --- Synchronize using /control_stats timestamps ---
+# --- Synchronize by control timestamps ---
 sync_rgb, sync_gray, sync_lane, sync_ctrl, sync_cbf = [], [], [], [], []
 for t_ctrl, ctrl in ctrl_msgs:
     rgb = find_nearest(t_ctrl, rgb_msgs)
@@ -77,18 +76,20 @@ for t_ctrl, ctrl in ctrl_msgs:
 n_frames = len(sync_ctrl)
 print(f"Synchronized {n_frames} frames across all topics.")
 
-# --- Create figure layout ---
-fig = plt.figure(figsize=(12, 8))
-gs = fig.add_gridspec(3, 3, height_ratios=[1, 1, 1])
+# --- Figure layout ---
+fig = plt.figure(figsize=(13, 8))
+gs = fig.add_gridspec(3, 2, height_ratios=[1, 1, 1])
 
+# Top row: images
 ax_rgb  = fig.add_subplot(gs[0, 0])
 ax_gray = fig.add_subplot(gs[0, 1])
-ax_lane = fig.add_subplot(gs[0, 2])
-ax_ctrl = fig.add_subplot(gs[1, :])
+ax_lane = fig.add_subplot(gs[1, 0])
+ax_ctrl = fig.add_subplot(gs[1, 1])
 ax_cbf  = fig.add_subplot(gs[2, :])
+
 fig.tight_layout(pad=3.0)
 
-# --- Image panels ---
+# --- Images ---
 im_rgb = ax_rgb.imshow(sync_rgb[0])
 ax_rgb.set_title("RGB Image")
 ax_rgb.axis("off")
@@ -97,33 +98,35 @@ im_gray = ax_gray.imshow(sync_gray[0], cmap="gray", vmin=0, vmax=255)
 ax_gray.set_title("Gray Image (/gray_pub)")
 ax_gray.axis("off")
 
-# --- Lane position plot ---
-(line_lane,) = ax_lane.plot([], [], "tab:blue")
-ax_lane.set_title("Lane Position (0=left, 1=right)")
-ax_lane.set_xlim(0, n_frames)
-ax_lane.set_ylim(0, 1)
-ax_lane.grid(True)
-
-# --- Control vector (rotated 90° CCW) ---
+# --- Lane localization plot (rotated view) ---
+ax_lane.set_xlim(-0.1, 1.1)
+ax_lane.set_ylim(-1, 1)
+ax_lane.set_aspect('equal')
+ax_lane.set_title("Lane Localization View (Top-down)")
+ax_lane.set_xlabel("Lane Width (0 = Left, 1 = Right)")
+ax_lane.axvline(0, color='blue', linestyle='--', label='Left Lane')
+ax_lane.axvline(1, color='green', linestyle='--', label='Right Lane')
+lane_marker, = ax_lane.plot([], [], 'ro', markersize=8, label='Vehicle')
+ax_lane.legend(loc="upper right")
+# --- Control vector plot ---
 ax_ctrl.set_xlim(-1.5, 1.5)
 ax_ctrl.set_ylim(-1.5, 1.5)
 ax_ctrl.set_aspect("equal")
 ax_ctrl.grid(True)
-ax_ctrl.set_title("Control Vector (Linear vs Angular, rotated 90° CCW)")
-
+ax_ctrl.set_title("Control Vector (rotated 90° CCW)")
 circle = plt.Circle((0, 0), 1.0, color='gray', fill=False, linestyle='--', alpha=0.5)
 ax_ctrl.add_patch(circle)
 quiv = ax_ctrl.quiver(0, 0, 0, 0, angles='xy', scale_units='xy', scale=1, color='tab:red')
 
-# --- CBF plots ---
+# --- CBF plot ---
 (line_cbfL,) = ax_cbf.plot([], [], label="CBF Left")
 (line_cbfR,) = ax_cbf.plot([], [], label="CBF Right")
 ax_cbf.legend()
 ax_cbf.set_title("Control Barrier Functions")
 ax_cbf.grid(True)
 
-# --- Data buffers ---
-lane_x, lane_y, cbf_x, cbfL_y, cbfR_y = [], [], [], [], []
+# Buffers
+cbf_x, cbfL_y, cbfR_y = [], [], []
 
 # --- Update ---
 def update(frame):
@@ -131,17 +134,16 @@ def update(frame):
     im_gray.set_data(sync_gray[frame])
     ax_rgb.set_title(f"RGB Image (Frame {frame+1}/{n_frames})")
 
-    # Lane
-    lane_x.append(frame)
-    lane_y.append(sync_lane[frame])
-    line_lane.set_data(lane_x, lane_y)
-    ax_lane.set_ylim(min(0, min(lane_y)), max(1, max(lane_y)))
-
-    # Control vector (rotate 90° CCW)
+    # Lane position marker
+    lane_val = sync_lane[frame]
+    lane_marker.set_data(lane_val, 0)
+    
+    # Control vector
     lin, ang = sync_ctrl[frame]
     lin_rot, ang_rot = -ang, lin
     quiv.set_UVC(lin_rot, ang_rot)
-    ax_ctrl.set_title(f"Control Vector (Lin={lin:.2f}, Ang={ang:.2f})")
+
+    
 
     # CBF
     cbf_x.append(frame)
@@ -151,8 +153,8 @@ def update(frame):
     line_cbfR.set_data(cbf_x, cbfR_y)
     ax_cbf.relim(); ax_cbf.autoscale_view()
 
-    return [im_rgb, im_gray, line_lane, quiv, line_cbfL, line_cbfR]
+    return [im_rgb, im_gray, lane_marker, quiv, line_cbfL, line_cbfR]
 
-# --- Animate ---
-ani = FuncAnimation(fig, update, frames=n_frames, interval=50, blit=False)
+# --- Animate (adjust speed here) ---
+ani = FuncAnimation(fig, update, frames=n_frames, interval=1, blit=False)  # smaller interval = faster
 plt.show()

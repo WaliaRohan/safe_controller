@@ -2,94 +2,117 @@
 import os
 import cv2
 import numpy as np
+import matplotlib
+matplotlib.use("TkAgg")   # use Agg backend for Docker/headless
 import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 import rosbag2_py
 import rclpy.serialization as serialization
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32, Float32MultiArray
 
-# ----------------------------
-# CONFIG
-# ----------------------------
 bag_path = "experiment_bag"
 
-# auto-detect storage type
-if any(f.endswith('.mcap') for f in os.listdir(bag_path)):
-    storage_id = 'mcap'
-else:
-    storage_id = 'sqlite3'
+# Detect MCAP vs SQLite3
+storage_id = "mcap" if any(f.endswith(".mcap") for f in os.listdir(bag_path)) else "sqlite3"
 
-# ----------------------------
-# READ BAG
-# ----------------------------
 reader = rosbag2_py.SequentialReader()
 storage_options = rosbag2_py.StorageOptions(uri=bag_path, storage_id=storage_id)
-converter_options = rosbag2_py.ConverterOptions('', '')
+converter_options = rosbag2_py.ConverterOptions("", "")
 reader.open(storage_options, converter_options)
 
-lane_vals = []
-ctrl_vals = []
-cbf_vals = []
-rgb_imgs = []
+lane_vals, ctrl_vals, cbf_vals, rgb_imgs = [], [], [], []
 
+# Read entire bag into memory
 while reader.has_next():
     topic, data, t = reader.read_next()
-
     if topic == "/lane_position":
         msg = serialization.deserialize_message(data, Float32)
         lane_vals.append(msg.data)
-
     elif topic == "/control_stats":
         msg = serialization.deserialize_message(data, Float32MultiArray)
         arr = np.array(msg.data)
         if len(arr) >= 4:
-            ctrl_vals.append(arr[:2])   # linear, angular
+            ctrl_vals.append(arr[:2])   # lin, ang
             cbf_vals.append(arr[-2:])   # left, right
-
     elif topic == "/rgb":
         msg = serialization.deserialize_message(data, Image)
-        img_np = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
-        gray = cv2.cvtColor(img_np, cv2.COLOR_BGR2GRAY)
+        img = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         rgb_imgs.append(gray)
 
-print(f"Loaded {len(lane_vals)} lane positions, {len(ctrl_vals)} control stats, {len(rgb_imgs)} images.")
+n_frames = min(len(rgb_imgs), len(ctrl_vals), len(lane_vals))
+print(f"Loaded {len(lane_vals)} lanes, {len(ctrl_vals)} controls, {len(rgb_imgs)} images.")
+print(f"Using {n_frames} synchronized frames.")
 
-# ----------------------------
-# PLOTS
-# ----------------------------
-fig, axs = plt.subplots(2, 2, figsize=(12, 8))
-ax_img, ax_lane, ax_ctrl, ax_cbf = axs.flatten()
+# --- Create layout ---
+fig = plt.figure(figsize=(10, 8))
+gs = fig.add_gridspec(3, 2, height_ratios=[1, 1, 1])
+ax_img = fig.add_subplot(gs[:, 0])
+ax_lane = fig.add_subplot(gs[0, 1])
+ax_ctrl = fig.add_subplot(gs[1, 1])
+ax_cbf = fig.add_subplot(gs[2, 1])
+fig.tight_layout(pad=3.0)
 
-# 1. Gray image (just show last one)
-if rgb_imgs:
-    ax_img.imshow(rgb_imgs[-1], cmap='gray')
-    ax_img.set_title("Gray image (last frame)")
-    ax_img.axis('off')
+# Image panel
+im = ax_img.imshow(np.zeros_like(rgb_imgs[0]), cmap="gray", vmin=0, vmax=255)
+ax_img.set_title("Gray Image")
+ax_img.axis("off")
 
-# 2. Lane position (normalized 0–1)
-if lane_vals:
-    ax_lane.plot(np.linspace(0, 1, len(lane_vals)), lane_vals, color='tab:blue')
-    ax_lane.set_title("Lane position (0=left, 1=right)")
-    ax_lane.set_xlabel("Normalized time")
-    ax_lane.set_ylabel("Position")
+# Lane position
+(line_lane,) = ax_lane.plot([], [], "tab:blue")
+ax_lane.set_title("Lane Position (0=left, 1=right)")
+ax_lane.set_xlim(0, n_frames)
+ax_lane.set_ylim(0, 1)
+ax_lane.grid(True)
 
-# 3. Control stats: lin, ang velocity
-if ctrl_vals:
-    ctrl_vals = np.array(ctrl_vals)
-    ax_ctrl.plot(ctrl_vals[:, 0], label="Linear vel")
-    ax_ctrl.plot(ctrl_vals[:, 1], label="Angular vel")
-    ax_ctrl.set_title("Control commands")
-    ax_ctrl.legend()
-    ax_ctrl.set_xlabel("Step")
+# Control
+(line_lin,) = ax_ctrl.plot([], [], label="Linear vel")
+(line_ang,) = ax_ctrl.plot([], [], label="Angular vel")
+ax_ctrl.legend()
+ax_ctrl.set_title("Control Vector")
+ax_ctrl.set_xlim(0, n_frames)
+ax_ctrl.grid(True)
 
-# 4. CBF Left / Right
-if cbf_vals:
-    cbf_vals = np.array(cbf_vals)
-    ax_cbf.plot(cbf_vals[:, 0], label="CBF Left (wall_y > y)")
-    ax_cbf.plot(cbf_vals[:, 1], label="CBF Right (y > 0)")
-    ax_cbf.set_title("Control Barrier Functions")
-    ax_cbf.legend()
-    ax_cbf.set_xlabel("Step")
+# CBF
+(line_cbfL,) = ax_cbf.plot([], [], label="CBF Left")
+(line_cbfR,) = ax_cbf.plot([], [], label="CBF Right")
+ax_cbf.legend()
+ax_cbf.set_title("Control Barrier Functions")
+ax_cbf.set_xlim(0, n_frames)
+ax_cbf.grid(True)
 
-plt.tight_layout()
+lane_x, lane_y, ctrl_x, lin_y, ang_y, cbf_x, cbfL_y, cbfR_y = [], [], [], [], [], [], [], []
+
+def update(frame):
+    im.set_data(rgb_imgs[frame])
+    ax_img.set_title(f"Frame {frame+1}/{n_frames}")
+
+    lane_x.append(frame)
+    lane_y.append(lane_vals[frame])
+    line_lane.set_data(lane_x, lane_y)
+    ax_lane.set_ylim(min(0, min(lane_y)), max(1, max(lane_y)))
+
+    ctrl_x.append(frame)
+    lin_y.append(ctrl_vals[frame][0])
+    ang_y.append(ctrl_vals[frame][1])
+    line_lin.set_data(ctrl_x, lin_y)
+    line_ang.set_data(ctrl_x, ang_y)
+    ax_ctrl.relim(); ax_ctrl.autoscale_view()
+
+    cbf_x.append(frame)
+    cbfL_y.append(cbf_vals[frame][0])
+    cbfR_y.append(cbf_vals[frame][1])
+    line_cbfL.set_data(cbf_x, cbfL_y)
+    line_cbfR.set_data(cbf_x, cbfR_y)
+    ax_cbf.relim(); ax_cbf.autoscale_view()
+
+    return [im, line_lane, line_lin, line_ang, line_cbfL, line_cbfR]
+
+ani = FuncAnimation(fig, update, frames=n_frames, interval=50, blit=False)
 plt.show()
+
+# Save MP4 if no display (Docker)
+# out_file = os.path.join(bag_path, "bag_combined.mp4")
+# ani.save(out_file, fps=20, dpi=150)
+# print(f"✅ Saved combined video to {out_file}")

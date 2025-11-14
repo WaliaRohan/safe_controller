@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 import os
-import cv2
+from tqdm import tqdm
 import numpy as np
 import matplotlib
 matplotlib.use("TkAgg")  # Use "Agg" for headless; "TkAgg" for live GUI
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+from matplotlib.animation import FuncAnimation, FFMpegWriter
 import rosbag2_py
 import rclpy.serialization as serialization
 from sensor_msgs.msg import Image
@@ -87,25 +87,24 @@ ax_lane = fig.add_subplot(gs[1, 2])
 ax_ctrl = fig.add_subplot(gs[1, 3])
 ax_cbf  = fig.add_subplot(gs[0, :])
 
-fig.tight_layout(pad=2.0)
+fig.tight_layout(pad=3.0)
 
 # --- Images ---
 pos = ax_rgb.get_position()
 ax_rgb.set_position([pos.x0 - 0.035, pos.y0 - 0.07, pos.width * 1.4, pos.height * 1.4])
 im_rgb = ax_rgb.imshow(sync_rgb[0])
-ax_rgb.set_title("RGB Image")
+ax_rgb.set_title("Raw Camera Feed")
 ax_rgb.axis("off")
 
 im_gray = ax_gray.imshow(sync_gray[0], cmap="gray", vmin=0, vmax=255)
-ax_gray.set_title("Gray Image (/gray_pub)")
+ax_gray.set_title("Processed Frames")
 ax_gray.axis("off")
 
 # --- Lane localization plot (rotated view) ---
 ax_lane.set_xlim(-0.1, 1.1)
 ax_lane.set_ylim(-1, 1)
-# ax_lane.set_aspect('equal')
+ax_lane.grid(True)
 ax_lane.set_title("Lane Localization (0 = Left, 1 = Right)")
-# ax_lane.set_xlabel("Lane Localization (0 = Left, 1 = Right)")
 ax_lane.axvline(0, color='blue', linestyle='--', label='Left Lane')
 ax_lane.axvline(1, color='green', linestyle='--', label='Right Lane')
 lane_marker, = ax_lane.plot([], [], 'ro', markersize=8, label='Vehicle')
@@ -116,7 +115,7 @@ ax_ctrl.set_xlim(-1.5, 1.5)
 ax_ctrl.set_ylim(-1.5, 1.5)
 ax_ctrl.set_aspect("equal")
 ax_ctrl.grid(True)
-ax_ctrl.set_title("Control Vector (rotated 90° CCW)")
+ax_ctrl.set_title("Control Vector")
 circle = plt.Circle((0, 0), 1.0, color='gray', fill=False, linestyle='--', alpha=0.5)
 ax_ctrl.add_patch(circle)
 quiv = ax_ctrl.quiver(0, 0, 0, 0, angles='xy', scale_units='xy', scale=1, color='tab:red')
@@ -125,6 +124,8 @@ quiv = ax_ctrl.quiver(0, 0, 0, 0, angles='xy', scale_units='xy', scale=1, color=
 (line_cbfL,) = ax_cbf.plot([], [], label="CBF Left")
 (line_cbfR,) = ax_cbf.plot([], [], label="CBF Right")
 ax_cbf.legend()
+ax_cbf.set_xlabel("Frame Index")
+ax_cbf.set_ylabel("Value")
 ax_cbf.set_title("Control Barrier Functions")
 ax_cbf.grid(True)
 
@@ -135,7 +136,7 @@ cbf_x, cbfL_y, cbfR_y = [], [], []
 def update(frame):
     im_rgb.set_data(sync_rgb[frame])
     im_gray.set_data(sync_gray[frame])
-    ax_rgb.set_title(f"RGB Image (Frame {frame+1}/{n_frames})")
+    # ax_rgb.set_title(f"RGB Image (Frame {frame+1}/{n_frames})")
 
     # Lane position marker
     lane_val = sync_lane[frame]
@@ -158,4 +159,33 @@ def update(frame):
 
 # --- Animate (adjust speed here) ---
 ani = FuncAnimation(fig, update, frames=n_frames, interval=1, blit=False)  # smaller interval = faster
-plt.show()
+
+# Display
+# plt.show()
+
+# Save
+pbar = tqdm(total=n_frames, desc="Saving animation")
+
+def update_progress(i, n):
+    pbar.update(1)
+
+# writer = FFMpegWriter(fps=30, codec="libx264", bitrate=1800)
+
+writer = FFMpegWriter(
+    fps=30,
+    codec="libx264",
+    bitrate=3000,
+    extra_args=["-threads", str(os.cpu_count()), "-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p"]
+)
+
+ani.save(
+    "/home/ubuntu/ros_ws/experiment_bag/bag_video.mp4",
+    writer=writer,
+    dpi=300,
+    progress_callback=update_progress
+)
+
+pbar.close()
+print("Saved video successfully.")
+
+# To speed up video 4x, use this: ffmpeg -i bag_video.mp4 -filter:v "setpts=0.25*PTS" -an bag_animation_4x.mp4

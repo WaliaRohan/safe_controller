@@ -101,6 +101,8 @@ ax_gray.set_title("Processed Frames")
 ax_gray.axis("off")
 
 # --- Lane localization plot (rotated view) ---
+pos_lane = ax_lane.get_position()
+ax_lane.set_position([pos_lane.x0, pos_lane.y0 - 0.03, pos_lane.width, pos_lane.height])
 ax_lane.set_xlim(-0.1, 1.1)
 ax_lane.set_ylim(-1, 1)
 ax_lane.grid(True)
@@ -111,6 +113,8 @@ lane_marker, = ax_lane.plot([], [], 'ro', markersize=8, label='Vehicle')
 ax_lane.legend(loc="upper center")
 
 # --- Control vector plot ---
+pos_ctrl = ax_ctrl.get_position()
+ax_ctrl.set_position([pos_ctrl.x0, pos_ctrl.y0 - 0.03, pos_ctrl.width, pos_ctrl.height])
 ax_ctrl.set_xlim(-1.5, 1.5)
 ax_ctrl.set_ylim(-1.5, 1.5)
 ax_ctrl.set_aspect("equal")

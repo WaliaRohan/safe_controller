@@ -13,26 +13,24 @@ from estimators import *
 from functools import partial
 
 class Stepper():
-    def __init__(self, t_init, x_initial_measurement):
+    def __init__(self, t_init, x_initial_measurement, P_init, wall_y):
 
         # Sim Params
         self.t = t_init
         self.dynamics = DubinsDynamics()
 
         # Sensor Params
-        # mu_u = 0.1
-        mu_u = -0.7 # -0.76917669977005
+        mu_u = -0.5 # -0.76917669977005
         sigma_u = jnp.sqrt(0.01) # Standard deviation
-        mu_v = 0.3 # 0.335
+        mu_v = 0.26
         sigma_v = jnp.sqrt(0.0001) # Standard deviation
 
         # State initialization, goal and constraints
-        # wall_y = 1.0
-        wall_y = 0.61
+        wall_y = wall_y
         self.obstacle = jnp.array([wall_y])  # Wall
 
         # Estimator Initialization
-        scale_factor = 0.61 # m (value used for normalization: y_normalized = y_true/scale_factor)
+        scale_factor = wall_y # m (value used for normalization: y_normalized = y_true/scale_factor)
         h = lambda x: jnp.array([x[1]/(scale_factor)])
         # h = None
         Q = jnp.square(1.0)*jnp.eye(self.dynamics.state_dim)
@@ -40,7 +38,7 @@ class Stepper():
                               h=h,
                               x_init=x_initial_measurement,
                               Q=Q,
-                              P_init=jnp.eye(self.dynamics.state_dim) * 0.5)
+                              P_init=P_init)
         # estimator = EKF(dynamics, dt, h=h, x_init=x_initial_measurement, R=jnp.square(sigma_v)*jnp.eye(dynamics.state_dim))
 
         self.x_estimated, self.p_estimated = self.estimator.get_belief()
@@ -48,16 +46,16 @@ class Stepper():
         # Right CBF (y > 0)
         n = self.dynamics.state_dim
         alpha = jnp.array([0.0, 1.0, 0.0, 0.0])
-        beta = jnp.array([0-0.1])
+        beta = jnp.array([0]) # jnp.array([0-0.1])
         delta = 0.001  # Probability of failure threshold
         self.cbf = BeliefCBF(alpha, beta, delta, n)
 
         # Left CBF (wall_y > y)
         n = self.dynamics.state_dim
         alpha2 = jnp.array([0.0, -1.0, 0.0, 0.0])
-        beta = jnp.array([-wall_y-0.5])
-        delta = 0.001  # Probability of failure threshold
-        self.cbf2 = BeliefCBF(alpha2, beta, delta, n)
+        beta2 = jnp.array([-wall_y]) # jnp.array([-wall_y-0.5])
+        delta = 0.1  # Probability of failure threshold
+        self.cbf2 = BeliefCBF(alpha2, beta2, delta, n)
 
         # Control params
         self.clf_slack_penalty = 10.0
@@ -178,7 +176,7 @@ class Stepper():
     # @partial(jit, static_argnums=0)
     def step_predict(self, t, u):
 
-        dt = self.t - t
+        dt = t - self.t # new_time - old_time
         self.t = t
 
         # belief = self.cbf.get_b_vector(self.x_estimated, self.p_estimated)
@@ -202,7 +200,7 @@ class Stepper():
         # update measurement and estimator belief
     
         if self.estimator.name == "GEKF":
-            self.estimator.update(x_measured)
+            return self.estimator.update(x_measured)
 
         if self.estimator.name == "EKF":
-            self.estimator.update(x_measured)
+            return self.estimator.update(x_measured)

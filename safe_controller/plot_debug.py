@@ -15,6 +15,16 @@ cbf_right_list = data["cbf_right"]
 u_opt_list = data["u_opt"]
 ground_truth_list = data["ground_truth"]
 
+left_lglfh = data["left_lglfh"]
+right_lglfh = data["right_lglfh"]
+left_rhs = data["left_rhs"]
+right_rhs = data["right_rhs"]
+
+right_l_f_h   = data["right_l_f_h"]
+right_l_f_2_h = data["right_l_f_2_h"]
+left_l_f_h    = data["left_l_f_h"]
+left_l_f_2_h  = data["left_l_f_2_h"]
+
 T = P_list.shape[0]
 time = np.arange(T)
 
@@ -79,18 +89,16 @@ ax.set_ylabel("Value")
 ax.legend()
 ax.grid(True)
 
-fig1.tight_layout()
-
 # ============================================================
 #                     FIGURE 2
 # ============================================================
 
-fig2, ax2 = plt.subplots(4, 4, figsize=(12, 12), sharex=True)
+# fig2, ax2 = plt.subplots(4, 4, figsize=(12, 12), sharex=True)
 
-for i in range(4):
-    for j in range(4):
-        ax2[i, j].plot(time, P_list[:, i, j])
-        ax2[i, j].set_title(f"P[{i},{j}]")
+# for i in range(4):
+#     for j in range(4):
+#         ax2[i, j].plot(time, P_list[:, i, j])
+#         ax2[i, j].set_title(f"P[{i},{j}]")
 
 # ============================================================
 #                     FIGURE 3
@@ -118,55 +126,239 @@ ax_u.set_xlabel("Time step")
 ax_u.grid(True)
 ax_u.legend()
 
-fig3.tight_layout()
+# fig3.tight_layout()
 
 
+
+# # ============================================================
+# #                     FIGURE 4
+# #             Trajectory with Heading (θ)
+# # ============================================================
+
+# fig4, ax4 = plt.subplots(figsize=(10, 8))
+
+# x = x_hat_list[:, 0]
+# y = x_hat_list[:, 1]
+# theta = x_hat_list[:, 3]
+
+# # Arrow directions
+# u = np.cos(theta)
+# v = np.sin(theta)
+
+# # Quiver thinning
+# step = max(1, len(x) // 200)
+
+# # Trajectory
+# ax4.plot(x, y, color="black", linewidth=1.5, label="Trajectory")
+
+# # Heading arrows
+# ax4.quiver(
+#     x[::step], y[::step],
+#     u[::step], v[::step],
+#     angles="xy",
+#     scale_units="xy",
+#     scale=1.0,
+#     width=0.004,
+#     color="blue",
+#     alpha=0.9
+# )
+
+# # Labels + styling
+# ax4.set_xlabel("x position")
+# ax4.set_ylabel("y position")
+# ax4.set_title("Figure 4: Trajectory with Heading (θ)")
+# ax4.grid(True)
+# ax4.set_aspect("auto")   # prevents squashing
+# ax4.legend()
+
+# fig4.tight_layout()
+
+# # ============================================================
+# #                     FIGURE 5
+# #             Higher Order Control Data
+# # ============================================================
+
+# T = len(left_lglfh)
+# time = np.arange(T)
+
+# # --- Create NEW figure only for these plots ---
+# fig_cbf, axs_cbf = plt.subplots(4, 1, figsize=(12, 10), sharex=True)
+
+# # ============================================================
+# #   Subplot 1 — Left CBF: L_g L_f h and RHS
+# # ============================================================
+# axs_cbf[0].plot(time, -np.einsum("ij,ij->i", left_lglfh, u_opt_list),
+#                 label="LHS (left)")
+# axs_cbf[0].plot(time, left_rhs, '--', label="RHS (left)")
+# axs_cbf[0].set_ylabel("Left CBF")
+# axs_cbf[0].legend()
+# axs_cbf[0].grid(True)
+
+# # ============================================================
+# #   Subplot 2 — Right CBF: L_g L_f h and RHS
+# # ============================================================
+# axs_cbf[1].plot(time, -np.einsum("ij,ij->i", right_lglfh, u_opt_list),
+#                 label="LHS right)")
+# axs_cbf[1].plot(time, right_rhs, '--', label="RHS (right)")
+# axs_cbf[1].set_ylabel("Right CBF")
+# axs_cbf[1].legend()
+# axs_cbf[1].grid(True)
+
+# # ============================================================
+# #   Subplot 3 — Left: h, h_dot, h_ddot
+# # ============================================================
+
+# left_h = cbf_left_list
+# left_h_dot = left_l_f_h
+# left_h_ddot = left_l_f_2_h.squeeze() + np.einsum("ij,ij->i", left_lglfh, u_opt_list)
+
+# axs_cbf[2].plot(time, left_h,      label="h_left")
+# axs_cbf[2].plot(time, left_h_dot,  label="ḣ_left")
+# axs_cbf[2].plot(time, left_h_ddot, markevery=50, label="ḧ_left")
+# axs_cbf[2].set_ylabel("Left h / ḣ / ḧ")
+# axs_cbf[2].legend()
+# axs_cbf[2].grid(True)
+
+# # ============================================================
+# #   Subplot 4 — Right: h, h_dot, h_ddot
+# # ============================================================
+
+# right_h = cbf_right_list
+# right_h_dot = right_l_f_h
+# right_h_ddot = right_l_f_2_h.squeeze() + np.einsum("ij,ij->i", right_lglfh, u_opt_list)
+
+# axs_cbf[3].plot(time, right_h,      label="h_right")
+# axs_cbf[3].plot(time, right_h_dot,  label="ḣ_right")
+# axs_cbf[3].plot(time, right_h_ddot, label="ḧ_right")
+# axs_cbf[3].set_ylabel("Right h / ḣ / ḧ")
+# axs_cbf[3].set_xlabel("Time Index")
+# axs_cbf[3].legend()
+# axs_cbf[3].grid(True)
+
+# # ============================================================
+# #                     FIGURE 6
+# #     Right HOCBF | h, h_dot, h_ddot | u_opt (v, ω)
+# # ============================================================
+
+T = len(right_lglfh)
+time = np.arange(T)
+
+fig6, axes = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
+
+# Unpack axes for clarity
+ax_hocbf   = axes[0]   # Top
+ax_uopt    = axes[1]   # Middle
+ax_horders = axes[2]   # Bottom
+
+# ------------------------------------------------------------
+# Subplot 1 — Right HOCBF inequality
+# ------------------------------------------------------------
+right_LgLf_u = -np.einsum("ij,ij->i", right_lglfh, u_opt_list)
+
+ax_hocbf.plot(time, right_LgLf_u, label="LHS: -L_g L_f h · u")
+ax_hocbf.plot(time, right_rhs, "--", label="RHS")
+
+ax_hocbf.set_ylabel("HOCBF Inequality")
+ax_hocbf.set_title("Right HOCBF:  -L_g L_f h · u  ≤  RHS")
+ax_hocbf.grid(True)
+ax_hocbf.legend()
+
+# ------------------------------------------------------------
+# Subplot 2 — u_opt (v, ω)
+# ------------------------------------------------------------
+ax_uopt.plot(time_ctrl, u_opt_list[:, 0], label="velocity (v)", color="red")
+ax_uopt.plot(time_ctrl, u_opt_list[:, 1], label="heading (ω)",  color="purple")
+
+ax_uopt.set_ylabel("Control Input")
+ax_uopt.set_xlabel("Time Step")
+ax_uopt.set_title("Optimal Control Inputs u = [v, ω]")
+ax_uopt.grid(True)
+ax_uopt.legend()
+
+# ------------------------------------------------------------
+# Subplot 3 — Right h, h_dot, h_ddot
+# ------------------------------------------------------------
+right_h      = np.array(cbf_right_list)
+right_h_dot  = np.array(right_l_f_h)
+right_h_ddot = right_l_f_2_h.squeeze() + np.einsum("ij,ij->i", right_lglfh, u_opt_list)
+
+ax_horders.plot(time, right_h,      label="h")
+ax_horders.plot(time, right_h_dot,  label="ḣ")
+ax_horders.plot(time, right_h_ddot, label="ḧ")
+
+ax_horders.set_ylabel("CBF Value")
+ax_horders.set_xlabel("Time Step")
+ax_horders.set_title("Right CBF: h, ḣ, ḧ")
+ax_horders.grid(True)
+ax_horders.legend()
+
+# fig6.tight_layout()
 
 # ============================================================
-#                     FIGURE 4
-#             Trajectory with Heading (θ)
+#                     FIGURE 7
+#       Compare ω = u_opt[:,1]  vs  -RHS / LgLfh[:,1]
 # ============================================================
 
-fig4, ax4 = plt.subplots(figsize=(10, 8))
+T = len(right_lglfh)
+time = np.arange(T)
 
-x = x_hat_list[:, 0]
-y = x_hat_list[:, 1]
-theta = x_hat_list[:, 3]
+# Extract the second control input (ω)
+u2 = u_opt_list[:, 1]
 
-# Arrow directions
-u = np.cos(theta)
-v = np.sin(theta)
+# Extract the second coefficient of Lg_Lf_h for the right CBF
+LgLfh_right_ang = right_lglfh[:, 1]
 
-# Quiver thinning
-step = max(1, len(x) // 200)
+# Compute the HOCBF-implied upper bound on u2
+hocbf_bound = -right_rhs.squeeze() / LgLfh_right_ang   # elementwise division
 
-# Trajectory
-ax4.plot(x, y, color="black", linewidth=1.5, label="Trajectory")
+# Create 2-subplot figure
+fig7, axes7 = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
 
-# Heading arrows
-ax4.quiver(
-    x[::step], y[::step],
-    u[::step], v[::step],
-    angles="xy",
-    scale_units="xy",
-    scale=1.0,
-    width=0.004,
-    color="blue",
-    alpha=0.9
-)
+# -----------------------------
+# Subplot 1 — Existing ω plot
+# -----------------------------
+ax7 = axes7[0]
 
-# Labels + styling
-ax4.set_xlabel("x position")
-ax4.set_ylabel("y position")
-ax4.set_title("Figure 4: Trajectory with Heading (θ)")
-ax4.grid(True)
-ax4.set_aspect("auto")   # prevents squashing
-ax4.legend()
+MAX_ANGULAR = 10.0
+u2_clipped = np.clip(u2, -MAX_ANGULAR, MAX_ANGULAR)
 
-fig4.tight_layout()
+ax7.plot(time, u2, label="u_opt ω (heading)", color="red")
+ax7.plot(time, hocbf_bound, label="-RHS / LgLf_h[1] (bound)", linestyle="--", color="gray", alpha=0.4)
 
+ax7.set_title("Figure 7: Heading Control vs HOCBF-implied Bound")
+ax7.set_ylabel("ω (rad/s)")
+ax7.set_ylim(-MAX_ANGULAR - 5, MAX_ANGULAR + 5)
+ax7.grid(True)
+ax7.legend()
+
+# -----------------------------
+# Subplot 2 — alpha-c1-c2 terms + Lf^2 h
+# -----------------------------
+ax_terms = axes7[1]
+
+alpha = 0.3
+roots = np.array([-0.75]) # Manually select root to be in left half plane
+coeff = alpha*np.poly(roots)
+
+h_ddot  = right_l_f_2_h.squeeze()
+
+term_c1 = -alpha * coeff[0] * right_l_f_h
+term_c2 = -alpha * coeff[1] * cbf_right_list
+
+ax_terms.plot(time, term_c1, label="-α c₁ ḣ", color="blue")
+ax_terms.plot(time, term_c2, label="-α c₂ h", color="green")
+ax_terms.plot(time, -right_l_f_2_h, label="-L_f² h", color="black")
+ax_terms.plot(time, LgLfh_right_ang, label="LgLf_h [1] (ang)")
+
+ax_terms.set_title("Right CBF Higher-Order Terms")
+ax_terms.set_ylabel("Value")
+ax_terms.set_xlabel("Time Step")
+# ax_terms.set_ylim(-1.2, 0.8)
+ax_terms.grid(True)
+ax_terms.legend()
 
 # ============================================================
 #                     SHOW ALL FIGURES
 # ============================================================
+
 plt.show()

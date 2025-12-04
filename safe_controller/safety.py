@@ -20,9 +20,9 @@ class Stepper():
         self.dynamics = DubinsDynamics()
 
         # Sensor Params
-        mu_u = -0.5 # -0.76917669977005
-        sigma_u = jnp.sqrt(0.01) # Standard deviation
-        mu_v = 0.26
+        mu_u = -0.76917669977005
+        sigma_u = jnp.sqrt(0.05) # Standard deviation
+        mu_v = 0.375
         sigma_v = jnp.sqrt(0.0001) # Standard deviation
 
         # State initialization, goal and constraints
@@ -46,7 +46,7 @@ class Stepper():
         # Right CBF (y > 0)
         n = self.dynamics.state_dim
         alpha = jnp.array([0.0, 1.0, 0.0, 0.0])
-        beta = jnp.array([0]) # jnp.array([0-0.1])
+        beta = jnp.array([0.0]) # jnp.array([0-0.1])
         delta = 0.001  # Probability of failure threshold
         self.cbf = BeliefCBF(alpha, beta, delta, n)
 
@@ -54,12 +54,11 @@ class Stepper():
         n = self.dynamics.state_dim
         alpha2 = jnp.array([0.0, -1.0, 0.0, 0.0])
         beta2 = jnp.array([-wall_y]) # jnp.array([-wall_y-0.5])
-        delta = 0.1  # Probability of failure threshold
         self.cbf2 = BeliefCBF(alpha2, beta2, delta, n)
 
         # Control params
-        self.clf_slack_penalty = 10.0
-        self.cbf_gain = 3.0 # CBF linear gain
+        self.clf_slack_penalty = 100.0
+        self.cbf_gain = 0.3 # CBF linear gain
         CBF_ON = True
 
         # Autodiff: Compute Gradients for CLF
@@ -96,14 +95,14 @@ class Stepper():
         rhs2, L_f_h2, _ = self.cbf2.h_b_r2_RHS(h_2, L_f_h_2, L_f_2_h_2, self.cbf_gain)
 
         A = jnp.vstack([
-            jnp.concatenate([-Lg_Lf_h, jnp.array([0.0])]), # -LgLfh u       <= -[alpha1 alpha2].T @ [Lfh h] + Lf^2h
+            jnp.concatenate([-Lg_Lf_h, jnp.array([0.0])]), # -LgLfh u <= [alpha1 alpha2].T @ [Lfh h] + Lf^2h
             jnp.concatenate([-Lg_Lf_h_2, jnp.array([0.0])]), # 2nd CBF
             jnp.eye(var_dim)
         ])
 
         u = jnp.hstack([
-            (rhs).squeeze(),                            # CBF constraint: rhs = -[alpha1 alpha2].T [Lfh h] + Lf^2h
-            (rhs2).squeeze(),                           # 2nd CBF constraint
+            (rhs).squeeze(),                            # rhs = [alpha1 alpha2].T [Lfh h] + Lf^2h
+            (rhs2).squeeze(),                           # 2nd CBF
             u_max, 
             jnp.inf # no upper limit on slack
         ])
@@ -123,7 +122,7 @@ class Stepper():
 
         # Solve the QP using jaxopt OSQP
         sol = self.solver.run(params_obj=(Q, c), params_eq=A, params_ineq=(l, u)).params
-        return sol, h, h_2
+        return sol, h, L_f_h, L_f_2_h, Lg_Lf_h, rhs, h_2, L_f_h_2, L_f_2_h_2, Lg_Lf_h_2, rhs2
 
     @partial(jit, static_argnums=0)
     def solve_qp_ref(self, x_estimated, covariance, u_max, u_nom):
@@ -134,7 +133,7 @@ class Stepper():
 
         b = self.cbf.get_b_vector(x_estimated, covariance)
 
-        # # Compute CBF components
+        # Compute CBF components
         h = self.cbf.h_b(b)
         L_f_hb, L_g_hb, L_f_2_h, Lg_Lf_h, grad_h_b, f_b = self.cbf.h_dot_b(b, self.dynamics) # ∇h(x)
 

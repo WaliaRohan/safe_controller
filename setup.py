@@ -22,7 +22,8 @@ setup(
         'console_scripts': [
             'teleop = safe_controller.teleop:main',
             'control = safe_controller.control:main',
-            'control_lane = safe_controller.control_lane:main'
+            'control_lane = safe_controller.control_lane:main',
+            'spoofer = safe_controller.spoofer:main'
         ],
     },
 )

@@ -15,6 +15,9 @@ cbf_right_list = data["cbf_right"]
 u_opt_list = data["u_opt"]
 ground_truth_list = data["ground_truth"]
 
+if len(ground_truth_list) == 0:
+    ground_truth_list = np.zeros((100, 2))
+
 left_lglfh = data["left_lglfh"]
 right_lglfh = data["right_lglfh"]
 left_rhs = data["left_rhs"]
@@ -33,6 +36,8 @@ scale_factor = 24  # Normalization scale (24 in = 0.61 m)
 ground_truth = np.array(ground_truth_list) # in m
 gt_x = ground_truth[:, 0] * scale_factor 
 gt_y = ground_truth[:, 1] * scale_factor + scale_factor/2
+
+plt.close("all") 
 
 # Set origin and scale to inches
 # gt_y[0] = 12.0
@@ -283,7 +288,7 @@ right_h_dot  = np.array(right_l_f_h)
 right_h_ddot = right_l_f_2_h.squeeze() + np.einsum("ij,ij->i", right_lglfh, u_opt_list)
 
 ax_horders.plot(time, right_h,      label="h")
-ax_horders.plot(time, right_h_dot,  label="ḣ")
+# ax_horders.plot(time, right_h_dot,  label="ḣ")
 ax_horders.plot(time, right_h_ddot, label="ḧ")
 
 ax_horders.set_ylabel("CBF Value")
@@ -336,7 +341,7 @@ ax7.legend()
 # -----------------------------
 ax_terms = axes7[1]
 
-alpha = 0.3
+alpha = 50.0
 roots = np.array([-0.75]) # Manually select root to be in left half plane
 coeff = alpha*np.poly(roots)
 
@@ -349,6 +354,7 @@ ax_terms.plot(time, term_c1, label="-α c₁ ḣ", color="blue")
 ax_terms.plot(time, term_c2, label="-α c₂ h", color="green")
 ax_terms.plot(time, -right_l_f_2_h, label="-L_f² h", color="black")
 ax_terms.plot(time, LgLfh_right_ang, label="LgLf_h [1] (ang)")
+ax_terms.plot(time, right_rhs, label="rhs")
 
 ax_terms.set_title("Right CBF Higher-Order Terms")
 ax_terms.set_ylabel("Value")
@@ -356,6 +362,45 @@ ax_terms.set_xlabel("Time Step")
 # ax_terms.set_ylim(-1.2, 0.8)
 ax_terms.grid(True)
 ax_terms.legend()
+
+### New figure
+
+fig8, axes = plt.subplots(5, 1, figsize=(12, 12), sharex=True)
+
+ax1, ax2, ax3, ax4, ax5 = axes
+
+# 1. u_opt_list[:, 1]  (angular control)
+ax1.plot(time, u_opt_list[:, 1], label="u₂ (ang control)", color='tab:blue')
+ax1.set_ylabel("u₂")
+ax1.grid(True)
+ax1.legend()
+
+# 2. right_rhs
+ax2.plot(time, right_rhs, label="right RHS", color='tab:orange')
+ax2.set_ylabel("RHS")
+ax2.grid(True)
+ax2.legend()
+
+# 3. right_h
+ax3.plot(time, right_h, label="h", color='tab:green')
+ax3.set_ylabel("h")
+ax3.grid(True)
+ax3.legend()
+
+# 4. right_h_dot
+ax4.plot(time, -right_h_dot, label="-ḣ", color='tab:red')
+ax4.set_ylabel("ḣ")
+ax4.grid(True)
+ax4.legend()
+
+# 5. right_h_ddot
+ax5.plot(time, right_h_ddot, label="ḧ", color='tab:purple')
+ax5.set_ylabel("ḧ")
+ax5.set_xlabel("Time Step")
+ax5.grid(True)
+ax5.legend()
+
+fig8.tight_layout()
 
 # ============================================================
 #                     SHOW ALL FIGURES

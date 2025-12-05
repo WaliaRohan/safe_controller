@@ -16,8 +16,8 @@ TOPIC_ODOM = "/vicon_pose"
 TOPIC_LANE_POSE = "/lane_position"
 TOPIC_CONTROL_STATS = "/control_stats"
 
-MAX_LINEAR = 0.5
-MAX_ANGULAR = 10.0
+MAX_LINEAR = 1.0
+MAX_ANGULAR = 1.0
 U_MAX = np.array([MAX_LINEAR, MAX_ANGULAR])
 
 class Control(Node):
@@ -77,7 +77,7 @@ class Control(Node):
                                       wall_y = self.wall_y) # CHANGE THIS LATER!
         self.stepper_initialized = True
 
-        rate = 1000.0 # Hz
+        rate = 5000.0 # Hz
         self.safety_timer = self.create_timer((1/rate), self.safety_filter)
         self.pub_timer = self.create_timer(1/rate, self.publisher_callback)
         self.nominal_timer = self.create_timer(1/rate, self.nominal_vel_loop)
@@ -89,8 +89,20 @@ class Control(Node):
         self.z_obs_list = []
         self.cbf_left_list = []
         self.cbf_right_list = []
+        
         self.u_opt_list = []
         self.ground_truth_list = []
+        self.right_lglfh_list = []
+        self.right_rhs_list = []
+        self.right_l_f_h_list = []
+        self.right_l_f_2_h_list = []
+        self.left_lglfh_list = []
+        self.left_rhs_list = []
+        self.left_l_f_h_list = []
+        self.left_l_f_2_h_list = []
+
+        self.state_time_list = []
+        self.control_time_list = []
         
         self.origin_rotated = None   # Will store first rotated (x, y) from tf as origin
 
@@ -129,6 +141,7 @@ class Control(Node):
             self.x_hat_list.append(self.stepper.estimator.x_hat)
             self.K_list.append(self.stepper.estimator.K)
             self.z_obs_list.append(z_obs)
+            self.state_time_list.append(self.stepper.t)
 
             self.state, cov = self.stepper.estimator.get_belief()
             # print(f"{np.array2string(np.asarray(self.state), precision=3)}, {np.trace(np.asarray(cov)):.3f}")
@@ -159,9 +172,23 @@ class Control(Node):
             Calls minimally invasive CBF QP to calculate safety commands
         """
         u_nom = np.array([self.nom_lin_vel, self.nom_ang_vel])
-        sol, h, h_2 = self.stepper.solve_qp_ref_lane(self.state, self.covariance, U_MAX, u_nom)  # Replace zeros with proper covariance (Look at odom callback)
+        sol, h, L_f_h, L_f_2_h, Lg_Lf_h, rhs, h_2, L_f_h_2, L_f_2_h_2, Lg_Lf_h_2, rhs2 = self.stepper.solve_qp_ref_lane(self.state, self.covariance, U_MAX, u_nom)  # Replace zeros with proper covariance (Look at odom callback)
+
         u_sol = sol.primal[0][:2]
-        u_opt = np.clip(u_sol, -U_MAX @ np.array([[0.025, 0.0], [0.0, 1.0]]), U_MAX)
+        u_opt = np.clip(u_sol, -U_MAX @ np.array([[1.0, 0.0], [0.0, 1.0]]), U_MAX)
+
+        self.control_time_list.append(self.stepper.t)
+        self.cbf_left_list.append(h_2)
+        self.cbf_right_list.append(h)
+        self.u_opt_list.append(u_opt)
+        self.right_lglfh_list.append(Lg_Lf_h)
+        self.left_lglfh_list.append(Lg_Lf_h_2)
+        self.right_rhs_list.append(rhs)
+        self.left_rhs_list.append(rhs2)
+        self.right_l_f_h_list.append(L_f_h)
+        self.right_l_f_2_h_list.append(L_f_2_h)
+        self.left_l_f_h_list.append(L_f_h_2)
+        self.left_l_f_2_h_list.append(L_f_2_h_2)
 
         self.lin_vel_cmd = np.float64(u_opt[0])
         self.ang_vel_cmd = np.float64(u_opt[1])
@@ -172,10 +199,6 @@ class Control(Node):
 
         msg = Float32MultiArray()
         msg.data = [float(u_sol[0]), float(u_sol[1]), float(h_2), float(h)]
-
-        self.cbf_left_list.append(h_2)
-        self.cbf_right_list.append(h)
-        self.u_opt_list.append(u_opt)
 
         self.control_stats_publisher_.publish(msg)
 
@@ -189,8 +212,21 @@ class Control(Node):
             cbf_left = np.array(self.cbf_left_list),
             cbf_right = np.array(self.cbf_right_list),
             u_opt = np.array(self.u_opt_list),
-            ground_truth = np.array(self.ground_truth_list)
-        )
+            ground_truth = np.array(self.ground_truth_list),
+            
+            left_lglfh=np.array(self.left_lglfh_list),
+            right_lglfh=np.array(self.right_lglfh_list),
+            right_rhs=np.array(self.right_rhs_list),
+            left_rhs=np.array(self.left_rhs_list),
+
+            right_l_f_h=np.array(self.right_l_f_h_list),
+            right_l_f_2_h=np.array(self.right_l_f_2_h_list),
+            left_l_f_h=np.array(self.left_l_f_h_list),
+            left_l_f_2_h=np.array(self.left_l_f_2_h_list),
+
+            state_time = np.array(self.state_time_list),
+            control_time = np.array(self.control_time_list)
+            )
 
     def tf_callback(self, msg):
         for transform in msg.transforms:

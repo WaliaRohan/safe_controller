@@ -58,7 +58,7 @@ class Stepper():
 
         # Control params
         self.clf_slack_penalty = 100.0
-        self.cbf_gain = 0.3 # CBF linear gain
+        self.cbf_gain = 50.0 # CBF linear gain
         CBF_ON = True
 
         # Autodiff: Compute Gradients for CLF

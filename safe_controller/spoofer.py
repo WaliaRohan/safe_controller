@@ -4,6 +4,10 @@ from rclpy.node import Node
 from std_msgs.msg import Float32
 import numpy as np
 
+"""
+This ROS Node takes position data from pure python sim (cbf_lite) and
+ publishes it to "lane_position" to run with "control_lane" node.
+"""
 
 class Spoofer(Node):
 

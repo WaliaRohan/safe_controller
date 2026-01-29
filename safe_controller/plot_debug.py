@@ -1,6 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+"""
+This script plots logged data from control_lane, including:
+
+State (ground_truth_list)
+
+State estimation (P, K, x_hat, z_obs)
+
+Right/Left CBF Data (h, Lfh, Lf_2_h, Lg_Lf_h, u_opt)
+
+"""
+
 # -----------------------------
 # Load the logs
 # -----------------------------
@@ -388,7 +399,7 @@ ax3.grid(True)
 ax3.legend()
 
 # 4. right_h_dot
-ax4.plot(time, -right_h_dot, label="-ḣ", color='tab:red')
+ax4.plot(time, right_h_dot, label="ḣ", color='tab:red')
 ax4.set_ylabel("ḣ")
 ax4.grid(True)
 ax4.legend()

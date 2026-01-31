@@ -16,7 +16,7 @@ TOPIC_ODOM = "/vicon_pose"
 TOPIC_LANE_POSE = "/lane_position"
 TOPIC_CONTROL_STATS = "/control_stats"
 
-MAX_LINEAR = 1.0
+MAX_LINEAR = 0.25
 MAX_ANGULAR = 1.0
 U_MAX = np.array([MAX_LINEAR, MAX_ANGULAR])
 
@@ -62,7 +62,10 @@ class Control(Node):
         self.wall_y = 24.0 # Lane width (24 in / 0.61 m)
 
         self.state = jnp.array([0.0, self.wall_y/2, 0.25, 0.0]) # x y v theta
-        self.covariance = jnp.eye(len(self.state)) * 1.0
+        self.covariance = jnp.eye(len(self.state)) @ jnp.array([[1.0, 0.0, 0.0, 0.0],
+                                                                [0.0, 2.5, 0.0, 0.0],
+                                                                [0.0, 0.0, 1.0, 0.0],
+                                                                [0.0, 0.0, 0.0, 1.0]])
         self.state_initialized = False
         self.stepper_initialized = False
 
@@ -81,6 +84,10 @@ class Control(Node):
         self.safety_timer = self.create_timer((1/rate), self.safety_filter)
         self.pub_timer = self.create_timer(1/rate, self.publisher_callback)
         self.nominal_timer = self.create_timer(1/rate, self.nominal_vel_loop)
+
+        self.z_obs = np.NaN
+        self.x_zeroed = np.NaN
+        self.y_zeroed = np.NaN
 
         # Lists for logging values
         self.P_list = []
@@ -135,13 +142,7 @@ class Control(Node):
             #                         np.NAN,
             #                         np.NAN])
             
-            z_obs = self.stepper.step_measure(msg.data)
-
-            self.P_list.append(self.stepper.estimator.P)
-            self.x_hat_list.append(self.stepper.estimator.x_hat)
-            self.K_list.append(self.stepper.estimator.K)
-            self.z_obs_list.append(z_obs)
-            self.state_time_list.append(self.stepper.t)
+            self.z_obs = self.stepper.step_measure(msg.data)
 
             self.state, cov = self.stepper.estimator.get_belief()
             # print(f"{np.array2string(np.asarray(self.state), precision=3)}, {np.trace(np.asarray(cov)):.3f}")
@@ -172,10 +173,20 @@ class Control(Node):
             Calls minimally invasive CBF QP to calculate safety commands
         """
         u_nom = np.array([self.nom_lin_vel, self.nom_ang_vel])
-        sol, h, L_f_h, L_f_2_h, Lg_Lf_h, rhs, h_2, L_f_h_2, L_f_2_h_2, Lg_Lf_h_2, rhs2 = self.stepper.solve_qp_ref_lane(self.state, self.covariance, U_MAX, u_nom)  # Replace zeros with proper covariance (Look at odom callback)
+
+        neg_umax_gain = np.array([[0.25, 0.0], [0.0, 1.0]])
+
+        sol, h, L_f_h, L_f_2_h, Lg_Lf_h, rhs, h_2, L_f_h_2, L_f_2_h_2, Lg_Lf_h_2, rhs2 = self.stepper.solve_qp_ref_lane(self.state, self.covariance, U_MAX, u_nom, neg_umax_gain)  # Replace zeros with proper covariance (Look at odom callback)
 
         u_sol = sol.primal[0][:2]
-        u_opt = np.clip(u_sol, -U_MAX @ np.array([[1.0, 0.0], [0.0, 1.0]]), U_MAX)
+        u_opt = np.clip(u_sol, -U_MAX @ neg_umax_gain, U_MAX)
+
+        if self.stepper_initialized:
+            self.P_list.append(self.stepper.estimator.P)
+            self.x_hat_list.append(self.stepper.estimator.x_hat)
+            self.K_list.append(self.stepper.estimator.K)
+            self.z_obs_list.append(self.z_obs)
+            self.state_time_list.append(self.stepper.t)
 
         self.control_time_list.append(self.stepper.t)
         self.cbf_left_list.append(h_2)
@@ -189,6 +200,7 @@ class Control(Node):
         self.right_l_f_2_h_list.append(L_f_2_h)
         self.left_l_f_h_list.append(L_f_h_2)
         self.left_l_f_2_h_list.append(L_f_2_h_2)
+        self.ground_truth_list.append((self.x_zeroed, self.y_zeroed))
 
         self.lin_vel_cmd = np.float64(u_opt[0])
         self.ang_vel_cmd = np.float64(u_opt[1])
@@ -204,7 +216,7 @@ class Control(Node):
 
     def save_logs(self):
         np.savez(
-            "/home/ubuntu/ros_ws/src/safe_controller/safe_controller/logs.npz",
+            "/home/ubuntu/ros_ws/src/safe_controller/safe_controller/pure_sim_replicate.npz",
             P=np.array(self.P_list),
             x_hat=np.array(self.x_hat_list),
             K=np.array(self.K_list),
@@ -255,15 +267,12 @@ class Control(Node):
                 # ------------------------------------------
                 # Translate so first sample becomes (0,0)
                 # ------------------------------------------
-                x_zeroed = x_rot - self.origin_rotated[0]
-                y_zeroed = y_rot - self.origin_rotated[1]
-
-                # Store result
-                self.ground_truth_list.append((x_zeroed, y_zeroed))
+                self.x_zeroed = x_rot - self.origin_rotated[0]
+                self.y_zeroed = y_rot - self.origin_rotated[1]
 
                 # Optional debug print
                 self.get_logger().info(
-                    f"Recorded GT: x={x_zeroed:.3f}, y={y_zeroed:.3f}"
+                    f"Recorded GT: x={self.x_zeroed:.3f}, y={self.y_zeroed:.3f}"
                 )
 
 

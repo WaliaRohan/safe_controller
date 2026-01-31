@@ -15,7 +15,7 @@ Right/Left CBF Data (h, Lfh, Lf_2_h, Lg_Lf_h, u_opt)
 # -----------------------------
 # Load the logs
 # -----------------------------
-data = np.load("/home/ubuntu/ros_ws/src/safe_controller/safe_controller/logs.npz", allow_pickle=True)
+data = np.load("/home/ubuntu/ros_ws/src/safe_controller/safe_controller/pure_sim_replicate.npz", allow_pickle=True)
 
 P_list = data["P"]            # shape (T, 4, 4)
 x_hat_list = data["x_hat"]    # shape (T, n)
@@ -58,52 +58,52 @@ plt.close("all")
 #                     FIGURE 1
 # ============================================================
 
-fig1, axs1 = plt.subplots(4, 1, figsize=(12, 16), sharex=True)
+fig1 = plt.figure(figsize=(12, 16), constrained_layout=True)
 
-# 1. Diagonal elements of P
-ax = axs1[0]
-ax.plot(time, P_list[:, 0, 0], label="P[0,0]")
-ax.plot(time, P_list[:, 1, 1], label="P[1,1]")
-ax.plot(time, P_list[:, 2, 2], label="P[2,2]")
-ax.plot(time, P_list[:, 3, 3], label="P[3,3]")
-ax.set_title("Diagonal Elements of Covariance Matrix P")
-ax.set_ylabel("Variance")
-ax.legend()
-ax.grid(True)
-
-# 2. x_hat trajectory (x vs y)
-ax = axs1[1]
+# 1. x_hat trajectory (x vs y)
+ax1 = fig1.add_subplot(4, 1, 1) 
 x_vals = x_hat_list[:, 0]
 y_vals = x_hat_list[:, 1]
-ax.plot(x_vals, y_vals, marker='o', markersize=2, linewidth=1)
-ax.plot(gt_x, gt_y, color="black", linestyle="--", linewidth=2, label="gt")
+ax1.plot(x_vals, y_vals, marker='o', markersize=2, linewidth=1)
+ax1.plot(gt_x, gt_y, color="black", linestyle="--", linewidth=2, label="gt")
 
-ax.set_title("State Trajectory (x vs y)")
-ax.set_ylabel("y")
-ax.set_xlabel("x")
-ax.grid(True)
+ax1.set_title("State Trajectory (x vs y)")
+ax1.set_ylabel("y")
+ax1.set_xlabel("x")
+ax1.grid(True)
+
+# 2. Diagonal elements of P
+ax2 = fig1.add_subplot(4, 1, 2)
+ax2.plot(time, P_list[:, 0, 0], label="P[0,0]")
+ax2.plot(time, P_list[:, 1, 1], label="P[1,1]")
+ax2.plot(time, P_list[:, 2, 2], label="P[2,2]")
+ax2.plot(time, P_list[:, 3, 3], label="P[3,3]")
+ax2.set_title("Diagonal Elements of Covariance Matrix P")
+ax2.set_ylabel("Variance")
+ax2.legend()
+ax2.grid(True)
 
 # 3. Kalman Gain K
-ax = axs1[2]
+ax3 = fig1.add_subplot(4, 1, 3, sharex=ax2)
 K_arr = np.array(K_list)
 n, obs_dim = K_arr.shape[1], K_arr.shape[2]
 for i in range(n):
     for j in range(obs_dim):
-        ax.plot(time, K_arr[:, i, j], label=f"K[{i},{j}]")
-ax.set_title("Kalman Gain K Elements")
-ax.set_ylabel("Gain Value")
-ax.legend(loc="upper right", fontsize=8)
-ax.grid(True)
+        ax3.plot(time, K_arr[:, i, j], label=f"K[{i},{j}]")
+ax3.set_title("Kalman Gain K Elements")
+ax3.set_ylabel("Gain Value")
+ax3.legend(loc="upper right", fontsize=8)
+ax3.grid(True)
 
 # 4. y_pred vs y_obs
-ax = axs1[3]
-ax.plot(time, x_hat_list[:, 1], label="y_pred")
-ax.plot(time, z_obs_list * scale_factor, label="y_obs")
-ax.set_title("x_hat[1] vs Observations z_obs")
-ax.set_xlabel("Time Step")
-ax.set_ylabel("Value")
-ax.legend()
-ax.grid(True)
+ax4 = fig1.add_subplot(4, 1, 4, sharex=ax2)
+ax4.plot(time, x_hat_list[:, 1], label="y_pred")
+ax4.plot(time, z_obs_list * scale_factor, label="y_obs")
+ax4.set_title("x_hat[1] vs Observations z_obs")
+ax4.set_xlabel("Time Step")
+ax4.set_ylabel("Value")
+ax4.legend()
+ax4.grid(True)
 
 # ============================================================
 #                     FIGURE 2

@@ -47,7 +47,7 @@ class Stepper():
         n = self.dynamics.state_dim
         alpha = jnp.array([0.0, 1.0, 0.0, 0.0])
         beta = jnp.array([0.0]) # jnp.array([0-0.1])
-        delta = 0.001  # Probability of failure threshold
+        delta = 0.0001  # Probability of failure threshold
         self.cbf = BeliefCBF(alpha, beta, delta, n)
 
         # Left CBF (wall_y > y)
@@ -68,7 +68,7 @@ class Stepper():
         self.solver = OSQP()
 
     @partial(jit, static_argnums=0)
-    def solve_qp_ref_lane(self, x_estimated, covariance, u_max, u_nom):
+    def solve_qp_ref_lane(self, x_estimated, covariance, u_max, u_nom, neg_umax_gain):
         """
             Minimally invasive lane centering control
         """
@@ -110,7 +110,7 @@ class Stepper():
         l = jnp.hstack([
             -jnp.inf, # No lower limit on CBF condition
             -jnp.inf, # 2nd CBF
-            -u_max @ jnp.array([[1.0, 0.0], [0.0, 1.0]]), # Cap lower lin speed at 25 % of high linear speed value
+            -u_max @ neg_umax_gain, # Cap lower lin speed
             0.0 # slack can't be negative
         ])
 

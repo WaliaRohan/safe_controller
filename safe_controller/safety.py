@@ -20,9 +20,9 @@ class Stepper():
         self.dynamics = DubinsDynamics()
 
         # Sensor Params
-        mu_u = -0.76917669977005
+        mu_u = -0.5 # 76917669977005
         sigma_u = jnp.sqrt(0.05) # Standard deviation
-        mu_v = 0.375
+        mu_v = 0.3 # 0.375 # Increase to relax left CBF
         sigma_v = jnp.sqrt(0.0001) # Standard deviation
 
         # State initialization, goal and constraints
@@ -47,7 +47,7 @@ class Stepper():
         n = self.dynamics.state_dim
         alpha = jnp.array([0.0, 1.0, 0.0, 0.0])
         beta = jnp.array([0.0]) # jnp.array([0-0.1])
-        delta = 0.0001  # Probability of failure threshold
+        delta = 0.001  # Probability of failure threshold
         self.cbf = BeliefCBF(alpha, beta, delta, n)
 
         # Left CBF (wall_y > y)
@@ -57,7 +57,7 @@ class Stepper():
         self.cbf2 = BeliefCBF(alpha2, beta2, delta, n)
 
         # Control params
-        self.clf_slack_penalty = 100.0
+        self.clf_slack_penalty = 1e1
         self.cbf_gain = 50.0 # CBF linear gain
         CBF_ON = True
 

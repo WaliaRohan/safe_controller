@@ -16,7 +16,7 @@ TOPIC_ODOM = "/vicon_pose"
 TOPIC_LANE_POSE = "/lane_position"
 TOPIC_CONTROL_STATS = "/control_stats"
 
-MAX_LINEAR = 0.3
+MAX_LINEAR = 0.35
 MAX_ANGULAR = 0.175
 U_MAX = np.array([MAX_LINEAR, MAX_ANGULAR])
 
@@ -174,7 +174,7 @@ class Control(Node):
         """
         u_nom = np.array([self.nom_lin_vel, self.nom_ang_vel])
 
-        neg_umax_gain = np.array([[-0.4, 0.0], [0.0, 1.0]])
+        neg_umax_gain = np.array([[-0.5, 0.0], [0.0, 1.0]])
 
         sol, h, L_f_h, L_f_2_h, Lg_Lf_h, rhs, h_2, L_f_h_2, L_f_2_h_2, Lg_Lf_h_2, rhs2 = self.stepper.solve_qp_ref_lane(self.state, self.covariance, U_MAX, u_nom, neg_umax_gain)  # Replace zeros with proper covariance (Look at odom callback)
 
